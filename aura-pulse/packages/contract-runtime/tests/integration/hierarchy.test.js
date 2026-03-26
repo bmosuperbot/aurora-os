@@ -3,27 +3,30 @@ import { makeTempRuntime } from '../helpers/temp-db.js'
 import { makeContract, agentWriter, humanResolver } from '../helpers/fixtures.js'
 import { offerReceivedType } from '../../src/domain-types/offer-received.js'
 
-async function parentInExecuting(runtime) {
+async function parentInExecuting(runtime, storage) {
     const parent = makeContract()
     await runtime.create(parent)
     await runtime.transition(parent.id, 'active', agentWriter())
     await runtime.transition(parent.id, 'waiting_approval', agentWriter())
     await runtime.transition(parent.id, 'resolver_active', humanResolver())
-    await runtime.transition(parent.id, 'executing', agentWriter())
+    const tokenRow = /** @type {any} */ (storage._db()
+        .prepare('SELECT token FROM resume_tokens WHERE contract_id = ?')
+        .get(parent.id))
+    await runtime.resume(parent.id, tokenRow.token, humanResolver(), 'proceed')
     return parent
 }
 
 describe('contract hierarchy', () => {
-    let runtime, cleanup
+    let runtime, storage, cleanup
     beforeEach(async () => {
-        ;({ runtime, cleanup } = makeTempRuntime())
+        ;({ runtime, storage, cleanup } = makeTempRuntime())
         await runtime.initialize()
         runtime.registerType(offerReceivedType)
     })
     afterEach(async () => { await runtime.shutdown(); cleanup() })
 
     it('spawnSubtask creates child with correct parent_id', async () => {
-        const parent = await parentInExecuting(runtime)
+        const parent = await parentInExecuting(runtime, storage)
         const child = makeContract()
         await runtime.spawnSubtask(parent.id, child, agentWriter())
         const savedChild = await runtime.get(child.id)
@@ -31,13 +34,13 @@ describe('contract hierarchy', () => {
     })
 
     it('spawnSubtask transitions parent executing → active', async () => {
-        const parent = await parentInExecuting(runtime)
+        const parent = await parentInExecuting(runtime, storage)
         await runtime.spawnSubtask(parent.id, makeContract(), agentWriter())
         expect((await runtime.get(parent.id))?.status).toBe('active')
     })
 
     it('parent child_ids includes spawned child', async () => {
-        const parent = await parentInExecuting(runtime)
+        const parent = await parentInExecuting(runtime, storage)
         const child = makeContract()
         await runtime.spawnSubtask(parent.id, child, agentWriter())
         const savedParent = await runtime.get(parent.id)
@@ -45,13 +48,16 @@ describe('contract hierarchy', () => {
     })
 
     it('multiple subtasks accumulate in child_ids', async () => {
-        const parent = await parentInExecuting(runtime)
+        const parent = await parentInExecuting(runtime, storage)
         const child1 = makeContract()
         await runtime.spawnSubtask(parent.id, child1, agentWriter())
         // Re-advance parent to executing for second spawn
         await runtime.transition(parent.id, 'waiting_approval', agentWriter())
         await runtime.transition(parent.id, 'resolver_active', humanResolver())
-        await runtime.transition(parent.id, 'executing', agentWriter())
+        const tokenRow2 = /** @type {any} */ (storage._db()
+            .prepare('SELECT token FROM resume_tokens WHERE contract_id = ?')
+            .get(parent.id))
+        await runtime.resume(parent.id, tokenRow2.token, humanResolver(), 'proceed')
         const child2 = makeContract()
         await runtime.spawnSubtask(parent.id, child2, agentWriter())
         const savedParent = await runtime.get(parent.id)
@@ -61,7 +67,7 @@ describe('contract hierarchy', () => {
     })
 
     it('child contract traverses its state machine independently', async () => {
-        const parent = await parentInExecuting(runtime)
+        const parent = await parentInExecuting(runtime, storage)
         const child = makeContract()
         await runtime.spawnSubtask(parent.id, child, agentWriter())
         await runtime.transition(child.id, 'active', agentWriter())
@@ -71,7 +77,7 @@ describe('contract hierarchy', () => {
     })
 
     it('spawnSubtask appends log entries to both parent and child', async () => {
-        const parent = await parentInExecuting(runtime)
+        const parent = await parentInExecuting(runtime, storage)
         const child = makeContract()
         await runtime.spawnSubtask(parent.id, child, agentWriter())
         const childLog = await runtime._storage.queryLog(child.id)

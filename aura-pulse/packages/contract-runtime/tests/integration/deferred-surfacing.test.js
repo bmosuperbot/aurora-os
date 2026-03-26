@@ -40,4 +40,21 @@ describe('Deferred surfacing', () => {
         const pending = await runtime.getPending()
         expect(pending.find(p => p.id === c.id)).toBeTruthy()
     })
+
+    it('getPending() does not return contracts in active status', async () => {
+        const c = makeContract()
+        await runtime.create(c)
+        await runtime.transition(c.id, 'active', agentWriter())
+        const pending = await runtime.getPending()
+        expect(pending.find(p => p.id === c.id)).toBeUndefined()
+    })
+
+    it('getPending() does not return contracts in complete status', async () => {
+        const c = makeContract()
+        await runtime.create(c)
+        await runtime.transition(c.id, 'active', agentWriter())
+        await runtime.transition(c.id, 'complete', agentWriter())
+        const pending = await runtime.getPending()
+        expect(pending.find(p => p.id === c.id)).toBeUndefined()
+    })
 })

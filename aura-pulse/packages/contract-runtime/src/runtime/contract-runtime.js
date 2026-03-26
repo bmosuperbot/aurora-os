@@ -13,9 +13,9 @@ import { randomUUID } from 'node:crypto'
 import { NoOpCompletionNotifier } from './completion-notifier.js'
 import { TypeRegistry } from './type-registry.js'
 import { TtlManager } from './ttl-manager.js'
-import { assertValidTransition } from './state-machine.js'
+import { assertValidTransition, assertTransitionRole } from './state-machine.js'
 import { generateResumeToken } from './resume-token.js'
-import { ContractNotFoundError, InvalidResumeTokenError, InvalidTransitionError } from '../types/errors.js'
+import { ContractNotFoundError, InvalidResumeTokenError, InvalidTransitionError, UnauthorizedRoleError } from '../types/errors.js'
 
 export class ContractRuntime {
     /**
@@ -91,6 +91,7 @@ export class ContractRuntime {
     async transition(id, to, actor) {
         const contract = await this._getOrThrow(id)
         assertValidTransition(id, contract.status, to)
+        assertTransitionRole(contract, actor, contract.status, to)
 
         const now = new Date().toISOString()
         const updated = { ...contract, status: to, updated_at: now }
@@ -132,6 +133,9 @@ export class ContractRuntime {
     async resume(id, token, resolver, action, value, artifacts) {
         const contract = await this._getOrThrow(id)
         assertValidTransition(id, contract.status, 'executing')
+        if (contract.participants.resolver.id !== resolver.id) {
+            throw new UnauthorizedRoleError(resolver.id, 'resolver', 'commit')
+        }
         const consumed = await this._storage.consumeResumeToken(id, token)
         if (!consumed) throw new InvalidResumeTokenError(id)
 
@@ -172,6 +176,10 @@ export class ContractRuntime {
      */
     async askClarification(id, question, resolverId) {
         const contract = await this._getOrThrow(id)
+        if (contract.participants.resolver.id !== resolverId) {
+            throw new UnauthorizedRoleError(resolverId, 'resolver', 'ask_clarification')
+        }
+        assertValidTransition(id, contract.status, 'clarifying')
         const now = new Date().toISOString()
 
         /** @type {import('../types/clarification.js').ClarificationEntry} */
@@ -190,7 +198,8 @@ export class ContractRuntime {
             clarifications: [...(contract.clarifications ?? []), entry],
         }
 
-        await this._storage.write(updated)
+        const committed = await this._storage.conditionalWrite(updated, contract.status)
+        if (!committed) throw new InvalidTransitionError(id, contract.status, 'clarifying')
         await this._storage.appendLog({
             contract_id: id,
             timestamp: now,
@@ -210,6 +219,10 @@ export class ContractRuntime {
      */
     async answerClarification(id, answer, agentId) {
         const contract = await this._getOrThrow(id)
+        if (contract.participants.writer.id !== agentId) {
+            throw new UnauthorizedRoleError(agentId, 'writer', 'answer_clarification')
+        }
+        assertValidTransition(id, contract.status, 'resolver_active')
         const now = new Date().toISOString()
 
         /** @type {import('../types/clarification.js').ClarificationEntry} */
@@ -228,7 +241,8 @@ export class ContractRuntime {
             clarifications: [...(contract.clarifications ?? []), entry],
         }
 
-        await this._storage.write(updated)
+        const committed = await this._storage.conditionalWrite(updated, contract.status)
+        if (!committed) throw new InvalidTransitionError(id, contract.status, 'resolver_active')
         await this._storage.appendLog({
             contract_id: id,
             timestamp: now,
@@ -308,7 +322,8 @@ export class ContractRuntime {
             updated_at: now,
             child_ids: [...(parent.child_ids ?? []), child.id],
         }
-        await this._storage.write(updatedParent)
+        const committed = await this._storage.conditionalWrite(updatedParent, 'executing')
+        if (!committed) throw new InvalidTransitionError(parentId, 'executing', 'active')
         await this._storage.appendLog({
             contract_id: parentId,
             timestamp: now,

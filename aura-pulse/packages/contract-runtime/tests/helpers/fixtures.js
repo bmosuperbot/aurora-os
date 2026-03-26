@@ -82,5 +82,8 @@ export function makeGrantContract(overrides = {}) {
 /** @returns {{ id: string, type: 'human' }} */
 export const humanResolver = () => ({ id: 'owner', type: /** @type {'human'} */ ('human') })
 
+/** @returns {{ id: string, type: 'human' }} */
+export const directorResolver = () => ({ id: 'director', type: /** @type {'human'} */ ('human') })
+
 /** @returns {{ id: string, type: 'agent' }} */
 export const agentWriter = () => ({ id: 'agent-primary', type: /** @type {'agent'} */ ('agent') })

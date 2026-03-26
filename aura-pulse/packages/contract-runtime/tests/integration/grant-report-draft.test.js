@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { makeTempRuntime } from '../helpers/temp-db.js'
-import { makeGrantContract, agentWriter, humanResolver } from '../helpers/fixtures.js'
+import { makeGrantContract, agentWriter, directorResolver } from '../helpers/fixtures.js'
 import { grantReportDraftType } from '../../src/domain-types/grant-report-draft.js'
 import { ContractValidationError } from '../../src/types/errors.js'
 
@@ -44,7 +44,7 @@ describe('grant-report-draft end-to-end', () => {
         }, 'agent-primary')
 
         await runtime.transition(contract.id, 'waiting_approval', agentWriter())
-        await runtime.transition(contract.id, 'resolver_active', humanResolver())
+        await runtime.transition(contract.id, 'resolver_active', directorResolver())
 
         const tokenRow = storage._db()
             .prepare('SELECT token FROM resume_tokens WHERE contract_id = ?')
@@ -54,7 +54,7 @@ describe('grant-report-draft end-to-end', () => {
         await runtime.resume(
             contract.id,
             /** @type {any} */ (tokenRow).token,
-            humanResolver(),
+            directorResolver(),
             'approve_and_submit',
             undefined,
             { edited_report_path: 'projects/ccc-q1-report/draft-v2.md' }

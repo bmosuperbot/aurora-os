@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { makeTempRuntime } from '../helpers/temp-db.js'
-import { makeContract, agentWriter } from '../helpers/fixtures.js'
+import { makeContract, agentWriter, humanResolver } from '../helpers/fixtures.js'
 import { offerReceivedType } from '../../src/domain-types/offer-received.js'
 import { InvalidTransitionError } from '../../src/types/errors.js'
 
@@ -46,5 +46,29 @@ describe('concurrent writes', () => {
 
         const final = await runtime.get(c.id)
         expect(final?.status).toBe('waiting_approval')
+    })
+
+    it('only 1 of 5 concurrent askClarification calls succeeds (CAS)', async () => {
+        const c = makeContract()
+        await runtime.create(c)
+        await runtime.transition(c.id, 'active', agentWriter())
+        await runtime.transition(c.id, 'waiting_approval', agentWriter())
+        await runtime.transition(c.id, 'resolver_active', humanResolver())
+
+        const results = await Promise.allSettled(
+            Array.from({ length: 5 }, (_, i) =>
+                runtime.askClarification(c.id, `Question ${i}?`, 'owner')
+            )
+        )
+
+        const fulfilled = results.filter(r => r.status === 'fulfilled')
+        const rejected = results.filter(r => r.status === 'rejected')
+
+        expect(fulfilled).toHaveLength(1)
+        expect(rejected).toHaveLength(4)
+        for (const r of rejected) {
+            expect(r.reason).toBeInstanceOf(InvalidTransitionError)
+        }
+        expect((await runtime.get(c.id))?.status).toBe('clarifying')
     })
 })
