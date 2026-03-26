@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { makeTempRuntime } from '../helpers/temp-db.js'
 import { makeContract, agentWriter, humanResolver } from '../helpers/fixtures.js'
 import { offerReceivedType } from '../../src/domain-types/offer-received.js'
-import { UnauthorizedRoleError, InvalidResumeTokenError } from '../../src/types/errors.js'
+import { InvalidResumeTokenError, ResumeRequiredError, UnauthorizedRoleError } from '../../src/types/errors.js'
 
 describe('role enforcement', () => {
     let runtime, storage, cleanup
@@ -59,7 +59,19 @@ describe('role enforcement', () => {
         await runtime.transition(c.id, 'resolver_active', humanResolver())
         await expect(
             runtime.transition(c.id, 'executing', agentWriter())
-        ).rejects.toBeInstanceOf(UnauthorizedRoleError)
+        ).rejects.toBeInstanceOf(ResumeRequiredError)
+        expect((await runtime.get(c.id))?.status).toBe('resolver_active')
+    })
+
+    it('resolver cannot bypass resume token by calling transition() to executing', async () => {
+        const c = makeContract()
+        await runtime.create(c)
+        await runtime.transition(c.id, 'active', agentWriter())
+        await runtime.transition(c.id, 'waiting_approval', agentWriter())
+        await runtime.transition(c.id, 'resolver_active', humanResolver())
+        await expect(
+            runtime.transition(c.id, 'executing', humanResolver())
+        ).rejects.toBeInstanceOf(ResumeRequiredError)
         expect((await runtime.get(c.id))?.status).toBe('resolver_active')
     })
 

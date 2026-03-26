@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { makeTempRuntime } from '../helpers/temp-db.js'
 import { makeContract, makeOfferContext, agentWriter, humanResolver } from '../helpers/fixtures.js'
 import { offerReceivedType } from '../../src/domain-types/offer-received.js'
-import { ContractValidationError } from '../../src/types/errors.js'
+import { ContractValidationError, InvalidTransitionError } from '../../src/types/errors.js'
 
 describe('offer-received end-to-end', () => {
     let runtime, storage, cleanup
@@ -106,7 +106,7 @@ describe('offer-received end-to-end', () => {
 
         await expect(
             runtime.resume(contract.id, /** @type {any} */ (tokenRow).token, humanResolver(), 'counter', 38)
-        ).rejects.toThrow()
+        ).rejects.toBeInstanceOf(InvalidTransitionError)
 
         let notified = null
         runtime._notifier = { onComplete: async (c) => { notified = c } }

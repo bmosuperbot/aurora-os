@@ -13,9 +13,9 @@ import { randomUUID } from 'node:crypto'
 import { NoOpCompletionNotifier } from './completion-notifier.js'
 import { TypeRegistry } from './type-registry.js'
 import { TtlManager } from './ttl-manager.js'
-import { assertValidTransition, assertTransitionRole } from './state-machine.js'
+import { assertRolePermitted, assertValidTransition, assertTransitionRole, resolveActorRole } from './state-machine.js'
 import { generateResumeToken } from './resume-token.js'
-import { ContractNotFoundError, InvalidResumeTokenError, InvalidTransitionError, UnauthorizedRoleError } from '../types/errors.js'
+import { ContractNotFoundError, InvalidResumeTokenError, InvalidTransitionError, ResumeRequiredError, UnauthorizedRoleError } from '../types/errors.js'
 
 export class ContractRuntime {
     /**
@@ -91,12 +91,18 @@ export class ContractRuntime {
     async transition(id, to, actor) {
         const contract = await this._getOrThrow(id)
         assertValidTransition(id, contract.status, to)
+        if (to === 'executing') {
+            throw new ResumeRequiredError(id)
+        }
         assertTransitionRole(contract, actor, contract.status, to)
 
         const now = new Date().toISOString()
         const updated = { ...contract, status: to, updated_at: now }
+        const writeOptions = to === 'waiting_approval'
+            ? { storeResumeToken: generateResumeToken() }
+            : undefined
 
-        const committed = await this._storage.conditionalWrite(updated, contract.status)
+        const committed = await this._storage.conditionalWrite(updated, contract.status, writeOptions)
         if (!committed) {
             throw new InvalidTransitionError(id, contract.status, to)
         }
@@ -106,11 +112,6 @@ export class ContractRuntime {
             participant: actor.id,
             event: `transition:${contract.status}→${to}`,
         })
-
-        if (to === 'waiting_approval') {
-            const { token, expiresAt } = generateResumeToken()
-            await this._storage.storeResumeToken(id, token, expiresAt)
-        }
 
         if (to === 'complete') {
             await this._notifier.onComplete(updated)
@@ -136,9 +137,6 @@ export class ContractRuntime {
         if (contract.participants.resolver.id !== resolver.id) {
             throw new UnauthorizedRoleError(resolver.id, 'resolver', 'commit')
         }
-        const consumed = await this._storage.consumeResumeToken(id, token)
-        if (!consumed) throw new InvalidResumeTokenError(id)
-
         const now = new Date().toISOString()
         const updated = {
             ...contract,
@@ -153,7 +151,17 @@ export class ContractRuntime {
             },
         }
 
-        await this._storage.write(updated)
+        const committed = await this._storage.conditionalWrite(updated, contract.status, {
+            consumeResumeToken: token,
+        })
+        if (!committed) {
+            const latest = await this._getOrThrow(id)
+            if (latest.status !== contract.status) {
+                throw new InvalidTransitionError(id, latest.status, 'executing')
+            }
+            throw new InvalidResumeTokenError(id)
+        }
+
         await this._storage.appendLog({
             contract_id: id,
             timestamp: now,
@@ -294,7 +302,13 @@ export class ContractRuntime {
      */
     async spawnSubtask(parentId, childContract, actor) {
         const parent = await this._getOrThrow(parentId)
-        assertValidTransition(parentId, parent.status, 'active')
+        if (parent.status !== 'executing') {
+            throw new InvalidTransitionError(parentId, parent.status, 'active')
+        }
+        const actorRole = resolveActorRole(parent, actor)
+        if (actorRole !== 'system') {
+            assertRolePermitted(actor.id, actorRole, 'spawn_subtask')
+        }
 
         const now = new Date().toISOString()
 
@@ -322,14 +336,22 @@ export class ContractRuntime {
             updated_at: now,
             child_ids: [...(parent.child_ids ?? []), child.id],
         }
-        const committed = await this._storage.conditionalWrite(updatedParent, 'executing')
+        const committed = await this._storage.writeSubtask(updatedParent, 'executing', child)
         if (!committed) throw new InvalidTransitionError(parentId, 'executing', 'active')
+
         await this._storage.appendLog({
             contract_id: parentId,
             timestamp: now,
             participant: actor.id,
             event: 'transition:executing→active',
             detail: { spawned_child: child.id },
+        })
+        await this._storage.appendLog({
+            contract_id: child.id,
+            timestamp: now,
+            participant: actor.id,
+            event: 'created',
+            detail: { parent_id: parentId },
         })
     }
 

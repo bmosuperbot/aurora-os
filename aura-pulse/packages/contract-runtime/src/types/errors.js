@@ -58,6 +58,15 @@ export class InvalidResumeTokenError extends AuraRuntimeError {
     }
 }
 
+export class ResumeRequiredError extends AuraRuntimeError {
+    /** @param {string} contractId */
+    constructor(contractId) {
+        super(`Contract ${contractId} must use resume() to enter executing`)
+        this.name = 'ResumeRequiredError'
+        /** @type {string} */ this.contractId = contractId
+    }
+}
+
 export class UnknownContractTypeError extends AuraRuntimeError {
     /** @param {string} type */
     constructor(type) {

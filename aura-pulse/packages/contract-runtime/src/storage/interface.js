@@ -3,7 +3,7 @@
  * @import { BaseContract } from '../types/base-contract.js'
  * @import { AutonomousLogEntry } from '../types/autonomous-log.js'
  * @import { ConnectorState } from '../types/connector-state.js'
- * @import { ContractFilter, LogFilter, ContractLogEntry } from './interface.js'
+ * @import { ContractFilter, LogFilter, ContractLogEntry, ConditionalWriteOptions } from './interface.js'
  */
 
 /**
@@ -34,9 +34,10 @@ export class ContractStorage {
      * Used by transition() to enforce exactly-once state changes under concurrency.
      * @param {BaseContract} contract
      * @param {string} fromStatus
+    * @param {ConditionalWriteOptions} [options]
      * @returns {Promise<boolean>}
      */
-    async conditionalWrite(contract, fromStatus) { throw new Error('not implemented') }
+    async conditionalWrite(contract, fromStatus, options) { throw new Error('not implemented') }
 
     /**
      * @param {string} id
@@ -113,6 +114,16 @@ export class ContractStorage {
      * @returns {Promise<boolean>}
      */
     async consumeResumeToken(contractId, token) { throw new Error('not implemented') }
+
+    /**
+     * Atomically update the parent contract and write the spawned child contract.
+     * Returns false if the parent status changed before the write committed.
+     * @param {BaseContract} parentContract
+     * @param {string} parentFromStatus
+     * @param {BaseContract} childContract
+     * @returns {Promise<boolean>}
+     */
+    async writeSubtask(parentContract, parentFromStatus, childContract) { throw new Error('not implemented') }
 
     // ─── Signal ───────────────────────────────────────────────────────
 

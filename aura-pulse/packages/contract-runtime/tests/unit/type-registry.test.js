@@ -43,6 +43,14 @@ describe('TypeRegistry', () => {
         expect(() => registry.validate(contract)).toThrow(ContractValidationError)
     })
 
+    it('throws ContractValidationError for offer-received with missing listing_title', () => {
+        registry.register(offerReceivedType)
+        const contract = makeContract({
+            intent: { goal: '', trigger: '', context: makeOfferContext({ listing_title: undefined }) },
+        })
+        expect(() => registry.validate(contract)).toThrow(ContractValidationError)
+    })
+
     it('throws ContractValidationError for offer-received with offer_amount = 0', () => {
         registry.register(offerReceivedType)
         const contract = makeContract({
@@ -64,6 +72,20 @@ describe('TypeRegistry', () => {
         registry.register(grantReportDraftType)
         const contract = makeGrantContract()
         delete contract.intent.context.deadline
+        expect(() => registry.validate(contract)).toThrow(ContractValidationError)
+    })
+
+    it('throws ContractValidationError for grant-report-draft with missing report_period', () => {
+        registry.register(grantReportDraftType)
+        const contract = makeGrantContract()
+        delete contract.intent.context.report_period
+        expect(() => registry.validate(contract)).toThrow(ContractValidationError)
+    })
+
+    it('throws ContractValidationError for grant-report-draft with no data_sources', () => {
+        registry.register(grantReportDraftType)
+        const contract = makeGrantContract()
+        contract.intent.context.data_sources = []
         expect(() => registry.validate(contract)).toThrow(ContractValidationError)
     })
 })

@@ -87,3 +87,6 @@ export const directorResolver = () => ({ id: 'director', type: /** @type {'human
 
 /** @returns {{ id: string, type: 'agent' }} */
 export const agentWriter = () => ({ id: 'agent-primary', type: /** @type {'agent'} */ ('agent') })
+
+/** @returns {{ id: string, type: 'agent' }} */
+export const agentExecutor = () => ({ id: 'agent-executor', type: /** @type {'agent'} */ ('agent') })

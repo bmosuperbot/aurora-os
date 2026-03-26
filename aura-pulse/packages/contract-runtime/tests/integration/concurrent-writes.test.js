@@ -2,12 +2,12 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { makeTempRuntime } from '../helpers/temp-db.js'
 import { makeContract, agentWriter, humanResolver } from '../helpers/fixtures.js'
 import { offerReceivedType } from '../../src/domain-types/offer-received.js'
-import { InvalidTransitionError } from '../../src/types/errors.js'
+import { InvalidResumeTokenError, InvalidTransitionError } from '../../src/types/errors.js'
 
 describe('concurrent writes', () => {
-    let runtime, cleanup
+    let runtime, storage, cleanup
     beforeEach(async () => {
-        ;({ runtime, cleanup } = makeTempRuntime())
+        ;({ runtime, storage, cleanup } = makeTempRuntime())
         await runtime.initialize()
         runtime.registerType(offerReceivedType)
     })
@@ -70,5 +70,35 @@ describe('concurrent writes', () => {
             expect(r.reason).toBeInstanceOf(InvalidTransitionError)
         }
         expect((await runtime.get(c.id))?.status).toBe('clarifying')
+    })
+
+    it('only 1 of 5 concurrent resume calls can consume the same token', async () => {
+        const c = makeContract()
+        await runtime.create(c)
+        await runtime.transition(c.id, 'active', agentWriter())
+        await runtime.transition(c.id, 'waiting_approval', agentWriter())
+        await runtime.transition(c.id, 'resolver_active', humanResolver())
+        const token = /** @type {any} */ (storage._db()
+            .prepare('SELECT token FROM resume_tokens WHERE contract_id = ?')
+            .get(c.id)).token
+
+        const results = await Promise.allSettled(
+            Array.from({ length: 5 }, () =>
+                runtime.resume(c.id, token, humanResolver(), 'counter', 38)
+            )
+        )
+
+        const fulfilled = results.filter(r => r.status === 'fulfilled')
+        const rejected = results.filter(r => r.status === 'rejected')
+
+        expect(fulfilled).toHaveLength(1)
+        expect(rejected).toHaveLength(4)
+        for (const r of rejected) {
+            expect(
+                r.reason instanceof InvalidResumeTokenError || r.reason instanceof InvalidTransitionError
+            ).toBe(true)
+        }
+
+        expect((await runtime.get(c.id))?.status).toBe('executing')
     })
 })

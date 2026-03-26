@@ -8,7 +8,7 @@ import { ContractStorage } from './interface.js'
  * @import { BaseContract } from '../types/base-contract.js'
  * @import { AutonomousLogEntry } from '../types/autonomous-log.js'
  * @import { ConnectorState } from '../types/connector-state.js'
- * @import { ContractFilter, LogFilter, ContractLogEntry } from './interface.js'
+ * @import { ContractFilter, LogFilter, ContractLogEntry, ConditionalWriteOptions } from './interface.js'
  */
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -52,62 +52,62 @@ export class SQLiteContractStorage extends ContractStorage {
     /** @param {BaseContract} contract */
     async write(contract) {
         const db = this._db()
-        const resolverType = contract.participants.resolver.type === 'human' ? 'human' : 'agent'
-        db.prepare(`
-            INSERT INTO contracts (id, version, type, status, resolver_type, created_at, updated_at,
-                expires_at, surface_after, parent_id, recovery_of, payload)
-            VALUES (@id, @version, @type, @status, @resolver_type, @created_at, @updated_at,
-                @expires_at, @surface_after, @parent_id, @recovery_of, @payload)
-            ON CONFLICT(id) DO UPDATE SET
-                status        = excluded.status,
-                updated_at    = excluded.updated_at,
-                expires_at    = excluded.expires_at,
-                surface_after = excluded.surface_after,
-                payload       = excluded.payload
-        `).run({
-            id:            contract.id,
-            version:       contract.version,
-            type:          contract.type,
-            status:        contract.status,
-            resolver_type: resolverType,
-            created_at:    contract.created_at,
-            updated_at:    contract.updated_at,
-            expires_at:    contract.expires_at ?? null,
-            surface_after: contract.surface_after ?? null,
-            parent_id:     contract.parent_id ?? null,
-            recovery_of:   contract.recovery_of ?? null,
-            payload:       JSON.stringify(contract),
-        })
+        this._upsertContract(db, contract)
         this._touchSignalSync()
     }
 
     /**
      * @param {BaseContract} contract
      * @param {string} fromStatus
+     * @param {ConditionalWriteOptions} [options]
      */
-    async conditionalWrite(contract, fromStatus) {
-        const result = this._db().prepare(`
-            UPDATE contracts SET
-                status        = @status,
-                updated_at    = @updated_at,
-                expires_at    = @expires_at,
-                surface_after = @surface_after,
-                payload       = @payload
-            WHERE id = @id AND status = @fromStatus
-        `).run({
-            id:            contract.id,
-            status:        contract.status,
-            updated_at:    contract.updated_at,
-            expires_at:    contract.expires_at ?? null,
-            surface_after: contract.surface_after ?? null,
-            payload:       JSON.stringify(contract),
-            fromStatus,
-        })
-        if (result.changes > 0) {
-            this._touchSignalSync()
+    async conditionalWrite(contract, fromStatus, options = {}) {
+        const committed = this._withImmediateTransaction((db) => {
+            if (options.consumeResumeToken) {
+                const tokenResult = db.prepare(`
+                    DELETE FROM resume_tokens WHERE contract_id = ? AND token = ? AND expires_at > ?
+                `).run(contract.id, options.consumeResumeToken, new Date().toISOString())
+                if (tokenResult.changes === 0) {
+                    return false
+                }
+            }
+
+            const result = db.prepare(`
+                UPDATE contracts SET
+                    status        = @status,
+                    updated_at    = @updated_at,
+                    expires_at    = @expires_at,
+                    surface_after = @surface_after,
+                    payload       = @payload
+                WHERE id = @id AND status = @fromStatus
+            `).run({
+                id:            contract.id,
+                status:        contract.status,
+                updated_at:    contract.updated_at,
+                expires_at:    contract.expires_at ?? null,
+                surface_after: contract.surface_after ?? null,
+                payload:       JSON.stringify(contract),
+                fromStatus,
+            })
+            if (result.changes === 0) {
+                return false
+            }
+
+            if (options.storeResumeToken) {
+                db.prepare('DELETE FROM resume_tokens WHERE contract_id = ?').run(contract.id)
+                db.prepare(`
+                    INSERT INTO resume_tokens (contract_id, token, expires_at) VALUES (?, ?, ?)
+                `).run(contract.id, options.storeResumeToken.token, options.storeResumeToken.expiresAt)
+            }
+
             return true
+        })
+
+        if (committed) {
+            this._touchSignalSync()
         }
-        return false
+
+        return committed
     }
 
     /** @param {string} id */
@@ -311,6 +311,45 @@ export class SQLiteContractStorage extends ContractStorage {
         return result.changes > 0
     }
 
+    /**
+     * @param {BaseContract} parentContract
+     * @param {string} parentFromStatus
+     * @param {BaseContract} childContract
+     */
+    async writeSubtask(parentContract, parentFromStatus, childContract) {
+        const committed = this._withImmediateTransaction((db) => {
+            const parentUpdate = db.prepare(`
+                UPDATE contracts SET
+                    status        = @status,
+                    updated_at    = @updated_at,
+                    expires_at    = @expires_at,
+                    surface_after = @surface_after,
+                    payload       = @payload
+                WHERE id = @id AND status = @fromStatus
+            `).run({
+                id:            parentContract.id,
+                status:        parentContract.status,
+                updated_at:    parentContract.updated_at,
+                expires_at:    parentContract.expires_at ?? null,
+                surface_after: parentContract.surface_after ?? null,
+                payload:       JSON.stringify(parentContract),
+                fromStatus:    parentFromStatus,
+            })
+            if (parentUpdate.changes === 0) {
+                return false
+            }
+
+            this._upsertContract(db, childContract)
+            return true
+        })
+
+        if (committed) {
+            this._touchSignalSync()
+        }
+
+        return committed
+    }
+
     // ─── Signal ───────────────────────────────────────────────────────
 
     async touchSignal() {
@@ -349,6 +388,68 @@ export class SQLiteContractStorage extends ContractStorage {
     _db() {
         if (!this.db) throw new Error('SQLiteContractStorage not initialized. Call initialize() first.')
         return this.db
+    }
+
+    /**
+     * @param {import('node:sqlite').DatabaseSync} db
+     * @param {BaseContract} contract
+     * @returns {void}
+     */
+    _upsertContract(db, contract) {
+        const resolverType = contract.participants.resolver.type === 'human' ? 'human' : 'agent'
+        db.prepare(`
+            INSERT INTO contracts (id, version, type, status, resolver_type, created_at, updated_at,
+                expires_at, surface_after, parent_id, recovery_of, payload)
+            VALUES (@id, @version, @type, @status, @resolver_type, @created_at, @updated_at,
+                @expires_at, @surface_after, @parent_id, @recovery_of, @payload)
+            ON CONFLICT(id) DO UPDATE SET
+                status        = excluded.status,
+                updated_at    = excluded.updated_at,
+                expires_at    = excluded.expires_at,
+                surface_after = excluded.surface_after,
+                payload       = excluded.payload
+        `).run({
+            id:            contract.id,
+            version:       contract.version,
+            type:          contract.type,
+            status:        contract.status,
+            resolver_type: resolverType,
+            created_at:    contract.created_at,
+            updated_at:    contract.updated_at,
+            expires_at:    contract.expires_at ?? null,
+            surface_after: contract.surface_after ?? null,
+            parent_id:     contract.parent_id ?? null,
+            recovery_of:   contract.recovery_of ?? null,
+            payload:       JSON.stringify(contract),
+        })
+    }
+
+    /**
+     * @template T
+     * @param {(db: import('node:sqlite').DatabaseSync) => T} callback
+     * @returns {T}
+     */
+    _withImmediateTransaction(callback) {
+        const db = this._db()
+        db.exec('BEGIN IMMEDIATE')
+
+        try {
+            const result = callback(db)
+            if (result === false) {
+                db.exec('ROLLBACK')
+                return result
+            }
+
+            db.exec('COMMIT')
+            return result
+        } catch (error) {
+            try {
+                db.exec('ROLLBACK')
+            } catch {
+                // Ignore rollback errors after the original failure.
+            }
+            throw error
+        }
     }
 
     _touchSignalSync() {

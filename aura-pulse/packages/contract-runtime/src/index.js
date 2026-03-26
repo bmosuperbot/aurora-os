@@ -11,6 +11,7 @@ export {
     TerminalStateError,
     UnauthorizedRoleError,
     InvalidResumeTokenError,
+    ResumeRequiredError,
     UnknownContractTypeError,
     ContractValidationError,
     ContractNotFoundError,

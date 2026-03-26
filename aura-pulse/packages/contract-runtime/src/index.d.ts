@@ -25,7 +25,7 @@ export type { AutonomousLogEntry } from './types/autonomous-log.js';
 export type { ConnectorState } from './types/connector-state.js';
 
 // Storage
-export type { ContractFilter, LogFilter, ContractLogEntry } from './storage/interface.js';
+export type { ContractFilter, LogFilter, ContractLogEntry, ConditionalWriteOptions } from './storage/interface.js';
 export { ContractStorage } from './storage/interface.js';
 export { SQLiteContractStorage } from './storage/sqlite-storage.js';
 
@@ -44,6 +44,7 @@ export {
     TerminalStateError,
     UnauthorizedRoleError,
     InvalidResumeTokenError,
+    ResumeRequiredError,
     UnknownContractTypeError,
     ContractValidationError,
     ContractNotFoundError,

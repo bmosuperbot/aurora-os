@@ -17,6 +17,7 @@ export const offerReceivedType = {
 
         if (!ctx.platform)             errors.push('context.platform is required')
         if (!ctx.listing_id)           errors.push('context.listing_id is required')
+        if (!ctx.listing_title)        errors.push('context.listing_title is required')
         if (!ctx.buyer_id)             errors.push('context.buyer_id is required')
         if (ctx.offer_amount == null)  errors.push('context.offer_amount is required')
         if (ctx.asking_price == null)  errors.push('context.asking_price is required')

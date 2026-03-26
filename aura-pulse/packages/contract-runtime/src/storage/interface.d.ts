@@ -28,11 +28,19 @@ export interface ContractLogEntry {
     detail?: Record<string, unknown>;
 }
 
+export interface ConditionalWriteOptions {
+    consumeResumeToken?: string;
+    storeResumeToken?: {
+        token: string;
+        expiresAt: string;
+    };
+}
+
 export class ContractStorage {
     initialize(): Promise<void>;
     close(): Promise<void>;
     write(contract: BaseContract): Promise<void>;
-    conditionalWrite(contract: BaseContract, fromStatus: string): Promise<boolean>;
+    conditionalWrite(contract: BaseContract, fromStatus: string, options?: ConditionalWriteOptions): Promise<boolean>;
     read(id: string): Promise<BaseContract | null>;
     query(filter?: ContractFilter): Promise<BaseContract[]>;
     appendLog(entry: ContractLogEntry): Promise<void>;
@@ -44,6 +52,7 @@ export class ContractStorage {
     readConnector(id: string): Promise<ConnectorState | null>;
     storeResumeToken(contractId: string, token: string, expiresAt: string): Promise<void>;
     consumeResumeToken(contractId: string, token: string): Promise<boolean>;
+    writeSubtask(parentContract: BaseContract, parentFromStatus: string, childContract: BaseContract): Promise<boolean>;
     touchSignal(): Promise<void>;
     acquireFileLock(path: string, agentId: string, operation: string): Promise<boolean>;
     releaseFileLock(path: string): Promise<void>;
