@@ -1,0 +1,19 @@
+{
+    "id": "aura-pulse",
+    "name": "Aura Pulse",
+    "description": "Sovereign contract runtime for the Aura OS agent layer. Surfaces decisions, manages connectors, and guards the shared project filesystem.",
+    "configSchema": {
+        "type": "object",
+        "properties": {
+            "auraRoot":            { "type": "string",  "description": "Base Aura data directory. Default: ~/.aura" },
+            "workspaceId":         { "type": "string",  "description": "Stable workspace slug, e.g. studio-ops. Default: default" },
+            "wsPort":              { "type": "number",  "description": "WebSocket server port. Default: 7700" },
+            "pulseStaticDir":      { "type": "string",  "description": "Optional override for Pulse static asset directory." },
+            "signalDebounceMs":    { "type": "number",  "description": "Signal file debounce window in ms. Default: 75" },
+            "engramBridgeEnabled": { "type": "boolean", "description": "Enable Engram completion bridge. Default: true" },
+            "engramHttpUrl":       { "type": "string",  "description": "Engram HTTP base URL. Default: http://localhost:4318" },
+            "projectRootOverride": { "type": "string",  "description": "Optional explicit File Bridge project root override." }
+        },
+        "additionalProperties": false
+    }
+}
