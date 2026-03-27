@@ -301,6 +301,18 @@ export class SQLiteContractStorage extends ContractStorage {
 
     /**
      * @param {string} contractId
+     * @returns {Promise<string | null>}
+     */
+    async readResumeToken(contractId) {
+        const now = new Date().toISOString()
+        const row = /** @type {{ token?: string } | undefined} */ (this._db().prepare(`
+            SELECT token FROM resume_tokens WHERE contract_id = ? AND expires_at > ? ORDER BY expires_at DESC LIMIT 1
+        `).get(contractId, now))
+        return row?.token ?? null
+    }
+
+    /**
+     * @param {string} contractId
      * @param {string} token
      */
     async consumeResumeToken(contractId, token) {

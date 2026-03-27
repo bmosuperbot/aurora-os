@@ -1,0 +1,13 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Pulse PWA demo dev server",
+			"type": "shell",
+			"command": "VITE_PLUGIN_URL=http://127.0.0.1:8711 pnpm dev -- --host 127.0.0.1 --port 4173",
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}

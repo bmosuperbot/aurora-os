@@ -77,4 +77,50 @@ describe('CLI smoke', () => {
         await runtime.transition(contractId, 'complete', { id: 'agent-primary', type: 'agent' })
         expect((await runtime.get(contractId))?.status).toBe('complete')
     })
+
+    it('normalizes surfaced actions into Pulse-compatible action payloads', async () => {
+        dir = mkdtempSync(join(tmpdir(), 'aura-cli-actions-'))
+        svc = new ContractRuntimeService(makeCfg(dir), fakeNotifier)
+        await svc.start()
+
+        const runtime = svc.getRuntime()
+        const surfaceDecision = buildSurfaceDecision(runtime)
+        const result = await surfaceDecision.execute('smoke-actions', {
+            type: 'offer-received',
+            goal: 'Need owner input',
+            trigger: 'Incoming offer',
+            context: {
+                platform: 'poshmark',
+                listing_id: 'listing-actions',
+                listing_title: 'Vintage Jacket',
+                buyer_id: 'buyer-actions',
+                offer_amount: 30,
+                asking_price: 45,
+            },
+            summary: 'Buyer offered $30 on $45 listing',
+            actions: [
+                { id: 'approve_offer', label: 'Approve offer', value: 'approve_offer' },
+                { id: 'decline_offer', label: 'Decline', action: 'decline_offer', style: 'secondary' },
+            ],
+        })
+
+        const payload = JSON.parse(result.content[0].text)
+        const contract = await runtime.get(payload.contractId)
+
+        expect(contract?.surface?.actions).toEqual([
+            {
+                id: 'approve_offer',
+                label: 'Approve offer',
+                action: 'approve_offer',
+                value: 'approve_offer',
+                style: 'primary',
+            },
+            {
+                id: 'decline_offer',
+                label: 'Decline',
+                action: 'decline_offer',
+                style: 'secondary',
+            },
+        ])
+    })
 })

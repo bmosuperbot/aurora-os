@@ -12,7 +12,7 @@ import { ContractRuntimeService }     from './src/services/contract-runtime-serv
 import { EngramCompletionBridge }     from './src/services/completion-bridge.js'
 import { WebSocketService }           from './src/services/websocket-service.js'
 import { FileBridgeWatcher }          from './src/services/file-bridge-watcher.js'
-import { registerStaticRoute }        from './setup-entry.js'
+import { registerStaticRoute, registerHistoryRoute } from './setup-entry.js'
 
 import { buildSurfaceDecision }       from './src/tools/aura-surface-decision.js'
 import { buildReportToPrimary }       from './src/tools/aura-report-to-primary.js'
@@ -173,5 +173,8 @@ export default definePluginEntry({
 
         // --- Static HTTP route (Pulse UI) ---
         registerStaticRoute(api, config.pulseStaticDir)
+
+        // --- History JSON route ---
+        registerHistoryRoute(api, storage)
     },
 })

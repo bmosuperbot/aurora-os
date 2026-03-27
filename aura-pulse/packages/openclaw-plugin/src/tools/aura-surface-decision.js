@@ -3,6 +3,17 @@ import { randomUUID } from 'node:crypto'
 
 /**
  * @import { ContractRuntime } from '@aura/contract-runtime'
+ * @typedef {Object} SurfaceDecisionParams
+ * @property {string} type
+ * @property {string} goal
+ * @property {string} trigger
+ * @property {Record<string, unknown>} context
+ * @property {Array<{id: string, label: string, action?: string, value?: unknown, style?: 'primary' | 'secondary' | 'destructive'}>} [actions]
+ * @property {string} [summary]
+ * @property {string} [voice_line]
+ * @property {string} [expires_at]
+ * @property {string} [surface_after]
+ * @property {string} [writer_id]
  */
 
 /**
@@ -24,7 +35,13 @@ export function buildSurfaceDecision(runtime) {
             actions:    Type.Optional(Type.Array(Type.Object({
                 id:    Type.String(),
                 label: Type.String(),
+                action: Type.Optional(Type.String()),
                 value: Type.Optional(Type.Unknown()),
+                style: Type.Optional(Type.Union([
+                    Type.Literal('primary'),
+                    Type.Literal('secondary'),
+                    Type.Literal('destructive'),
+                ])),
             }), { description: 'Selectable actions for the resolver' })),
             summary:     Type.Optional(Type.String({ description: 'Human-readable summary for the decision card' })),
             voice_line:  Type.Optional(Type.String({ description: 'Short voice line for the decision card' })),
@@ -33,10 +50,23 @@ export function buildSurfaceDecision(runtime) {
             writer_id:   Type.Optional(Type.String({ description: 'Agent ID creating this contract. Default: agent-primary' })),
         }),
         async execute(_id, params) {
-            const p          = /** @type {any} */ (params)
+            const p          = /** @type {SurfaceDecisionParams} */ (params)
             const writerId   = p.writer_id ?? 'agent-primary'
             const contractId = randomUUID()
             const now        = new Date().toISOString()
+            const normalizedActions = Array.isArray(p.actions)
+                ? p.actions.map((action, index) => ({
+                    id: action.id,
+                    label: action.label,
+                    action: typeof action.action === 'string'
+                        ? action.action
+                        : typeof action.value === 'string'
+                            ? action.value
+                            : action.id,
+                    ...(action.value !== undefined ? { value: action.value } : {}),
+                    style: action.style ?? (index === 0 ? 'primary' : 'secondary'),
+                }))
+                : []
 
             /** @type {import('@aura/contract-runtime').BaseContract} */
             const contract = {
@@ -57,7 +87,7 @@ export function buildSurfaceDecision(runtime) {
                     voice_line: p.voice_line ?? '',
                     summary: p.summary,
                     recommendation: { action: 'review', reasoning: p.goal },
-                    actions: p.actions ?? [],
+                    actions: normalizedActions,
                     version: 1,
                 } } : {}),
             }

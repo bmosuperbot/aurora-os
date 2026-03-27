@@ -1,0 +1,298 @@
+import { create } from "zustand";
+import type {
+  BaseContract,
+  ConnectorCard,
+  A2UIMessage,
+  RuntimeMessage,
+  SurfaceMessage,
+  CompletionSurface,
+} from "../ws/protocol.js";
+import { pulseWSClient } from "../ws/client.js";
+
+// ── Surface modes ─────────────────────────────────────────────────────────────
+
+export type SurfaceMode =
+  | "silent"
+  | "decision"
+  | "resolver_active"
+  | "clarifying"
+  | "artifact_review"
+  | "confirming"
+  | "completion"
+  | "connector";
+
+const defaultTransportSend = (msg: SurfaceMessage) => {
+  pulseWSClient.send(msg);
+};
+
+function preserveResumeToken(current: BaseContract | null, incoming: BaseContract): BaseContract {
+  return current?.id === incoming.id && current.resume_token && !incoming.resume_token
+    ? { ...incoming, resume_token: current.resume_token }
+    : incoming;
+}
+
+function upsertPendingContract(
+  pendingContracts: Array<{ contract: BaseContract; a2uiMessages: A2UIMessage[] }>,
+  entry: { contract: BaseContract; a2uiMessages: A2UIMessage[] },
+) {
+  const existingIndex = pendingContracts.findIndex(({ contract }) => contract.id === entry.contract.id);
+  if (existingIndex === -1) {
+    return [...pendingContracts, entry];
+  }
+
+  const withoutDuplicates = pendingContracts.filter(({ contract }) => contract.id !== entry.contract.id);
+  withoutDuplicates.splice(existingIndex, 0, entry);
+  return withoutDuplicates;
+}
+
+function takeNextPendingContract(
+  pendingContracts: Array<{ contract: BaseContract; a2uiMessages: A2UIMessage[] }>,
+  skippedContractId?: string,
+) {
+  const filtered = skippedContractId
+    ? pendingContracts.filter(({ contract }) => contract.id !== skippedContractId)
+    : pendingContracts;
+  const [next, ...rest] = filtered;
+  return { next, rest };
+}
+
+// ── Store shape ───────────────────────────────────────────────────────────────
+
+export interface SurfaceState {
+  mode: SurfaceMode;
+  contract: BaseContract | null;
+  a2uiMessages: A2UIMessage[];
+  completionSurface: CompletionSurface | null;
+  pendingContracts: Array<{ contract: BaseContract; a2uiMessages: A2UIMessage[] }>;
+  artifactUnderlyingMode: SurfaceMode;
+  connectorCard: ConnectorCard | null;
+  connectorUnderlyingMode: SurfaceMode;
+  historyOpen: boolean;
+  briefOpen: boolean;
+  wsStatus: "connected" | "reconnecting" | "disconnected";
+  transportSend: (msg: SurfaceMessage) => void;
+
+  // Actions
+  handleMessage: (msg: RuntimeMessage) => void;
+  sendMessage: (msg: SurfaceMessage) => void;
+  configureTransport: (sender: (msg: SurfaceMessage) => void) => void;
+  setWsStatus: (status: "connected" | "reconnecting" | "disconnected") => void;
+  openHistory: () => void;
+  closeHistory: () => void;
+  openBrief: () => void;
+  closeBrief: () => void;
+  openArtifactReview: () => void;
+  closeArtifactReview: () => void;
+  dismissCompletion: () => void;
+}
+
+// ── Store implementation ──────────────────────────────────────────────────────
+
+export const useSurfaceStore = create<SurfaceState>((set, get) => ({
+  mode: "silent",
+  contract: null,
+  a2uiMessages: [],
+  completionSurface: null,
+  pendingContracts: [],
+  artifactUnderlyingMode: "silent",
+  connectorCard: null,
+  connectorUnderlyingMode: "silent",
+  historyOpen: false,
+  briefOpen: false,
+  wsStatus: "disconnected",
+  transportSend: defaultTransportSend,
+
+  handleMessage(msg) {
+    const state = get();
+
+    switch (msg.type) {
+      case "decision": {
+        const entry = {
+          contract: preserveResumeToken(state.contract, msg.contract),
+          a2uiMessages: msg.a2uiMessages ?? [],
+        };
+
+        if (state.contract?.id === entry.contract.id) {
+          set({ contract: entry.contract, a2uiMessages: entry.a2uiMessages });
+          break;
+        }
+
+        if (state.mode === "silent" || state.mode === "completion") {
+          set({ mode: "decision", contract: entry.contract, a2uiMessages: entry.a2uiMessages });
+        } else {
+          set((s) => ({ pendingContracts: upsertPendingContract(s.pendingContracts, entry) }));
+        }
+        break;
+      }
+
+      case "surface_update": {
+        if (state.mode === "resolver_active" || state.mode === "clarifying" || state.mode === "artifact_review") {
+          if (msg.contract) {
+            const nextContract = preserveResumeToken(state.contract, msg.contract);
+            set({
+              contract: nextContract,
+              mode: state.mode === "artifact_review"
+                ? "artifact_review"
+                : nextContract.status === "clarifying"
+                  ? "clarifying"
+                  : "resolver_active",
+              a2uiMessages: msg.a2uiMessages ?? state.a2uiMessages,
+            });
+          } else if (msg.contractId && msg.surface && state.contract?.id === msg.contractId) {
+            set((s) => ({
+              contract: s.contract ? { ...s.contract, surface: msg.surface } : null,
+              a2uiMessages: msg.a2uiMessages ?? s.a2uiMessages,
+            }));
+          }
+        }
+        break;
+      }
+
+      case "clarification_answer": {
+        if (state.contract && state.contract.id === msg.contractId) {
+          set((s) => {
+            const existing = s.contract?.clarifications ?? [];
+            const hasEntry = existing.some((entry) => entry.id === msg.entry.id);
+            const nextContract = msg.contract
+              ? preserveResumeToken(s.contract, msg.contract)
+              : s.contract
+                ? {
+                    ...s.contract,
+                    clarifications: hasEntry ? existing : [...existing, msg.entry],
+                  }
+                : null;
+
+            return {
+              mode: s.mode === "artifact_review"
+                ? "artifact_review"
+                : nextContract?.status === "clarifying"
+                  ? "clarifying"
+                  : "resolver_active",
+              contract: nextContract,
+            };
+          });
+        }
+        break;
+      }
+
+      case "clear": {
+        if (state.contract && state.contract.id !== msg.contractId) {
+          set((s) => ({
+            pendingContracts: s.pendingContracts.filter(({ contract }) => contract.id !== msg.contractId),
+          }));
+          break;
+        }
+        const { next, rest } = takeNextPendingContract(get().pendingContracts, msg.contractId);
+        if (next) {
+          set({
+            mode: "decision",
+            contract: next.contract,
+            a2uiMessages: next.a2uiMessages,
+            completionSurface: null,
+            pendingContracts: rest,
+          });
+        } else {
+          set({
+            mode: "silent",
+            contract: null,
+            a2uiMessages: [],
+            completionSurface: null,
+          });
+        }
+        break;
+      }
+
+      case "completion": {
+        if (!state.contract || state.contract.id === msg.contractId) {
+          set({
+            mode: "completion",
+            completionSurface: msg.surface,
+          });
+        }
+        break;
+      }
+
+      case "connector_request": {
+        set({
+          connectorCard: msg.card,
+          connectorUnderlyingMode: state.mode,
+        });
+        break;
+      }
+
+      case "connector_complete": {
+        set({
+          connectorCard: null,
+        });
+        break;
+      }
+    }
+  },
+
+  sendMessage(msg) {
+    const { mode } = get();
+
+    if (msg.type === "resolve" && !msg.token) {
+      console.warn("[PulseWS] Missing resume token for resolve; aborting commit.");
+      return;
+    }
+
+    // Apply state transitions for outbound user actions
+    switch (msg.type) {
+      case "engage":
+        set({ mode: "resolver_active" });
+        break;
+      case "ask_clarification":
+        set({ mode: "clarifying" });
+        break;
+      case "resolve":
+        set({ mode: "confirming" });
+        break;
+      case "abandon":
+        set({ mode: "silent", contract: null, a2uiMessages: [] });
+        break;
+      case "decline_connector":
+      case "complete_connector":
+        // Clear connector overlay; restore underlying mode
+        set((s) => ({ connectorCard: null, mode: s.connectorUnderlyingMode }));
+        break;
+    }
+
+    // Suppress TS complaint about unused variable
+    void mode;
+    get().transportSend(msg);
+  },
+
+  configureTransport(sender) {
+    set({ transportSend: sender });
+  },
+
+  setWsStatus(status) {
+    set({ wsStatus: status });
+  },
+
+  openHistory: () => set({ historyOpen: true }),
+  closeHistory: () => set({ historyOpen: false }),
+  openBrief: () => set({ briefOpen: true }),
+  closeBrief: () => set({ briefOpen: false }),
+  openArtifactReview: () => set((s) => ({ artifactUnderlyingMode: s.mode, mode: "artifact_review" })),
+  closeArtifactReview: () => set((s) => ({
+    mode: s.artifactUnderlyingMode === "artifact_review" ? "resolver_active" : s.artifactUnderlyingMode,
+    artifactUnderlyingMode: "silent",
+  })),
+  dismissCompletion: () => {
+    const currentId = get().contract?.id;
+    const { next, rest } = takeNextPendingContract(get().pendingContracts, currentId);
+    if (next) {
+      set({
+        mode: "decision",
+        contract: next.contract,
+        a2uiMessages: next.a2uiMessages,
+        completionSurface: null,
+        pendingContracts: rest,
+      });
+      return;
+    }
+    set({ mode: "silent", contract: null, a2uiMessages: [], completionSurface: null });
+  },
+}));

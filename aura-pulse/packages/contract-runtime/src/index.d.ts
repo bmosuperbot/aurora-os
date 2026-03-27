@@ -22,6 +22,7 @@ export type {
 export type { SurfaceAction } from './types/surface-action.js';
 export type { ClarificationEntry } from './types/clarification.js';
 export type { AutonomousLogEntry } from './types/autonomous-log.js';
+export type { MorningBriefPendingDecision, MorningBriefRecommendationContext } from './types/morning-brief.js';
 export type { ConnectorState } from './types/connector-state.js';
 
 // Storage

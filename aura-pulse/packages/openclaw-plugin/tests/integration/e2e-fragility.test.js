@@ -79,6 +79,14 @@ function collectMessages(ws, n, timeout = 2500) {
     })
 }
 
+/**
+ * @param {any} message
+ * @returns {string | undefined}
+ */
+function getDecisionContractId(message) {
+    return message?.payload?.contract?.id ?? message?.payload?.id
+}
+
 describe('E2E fragility scenarios', () => {
     /** @type {Array<() => Promise<void>>} */
     let cleanups = []
@@ -131,7 +139,7 @@ describe('E2E fragility scenarios', () => {
 
         const firstDecisionIds = firstBatch
             .filter((m) => m.type === 'decision')
-            .map((m) => /** @type {{ id: string }} */ (m.payload).id)
+            .map((m) => getDecisionContractId(m))
 
         for (const id of ids) {
             expect(firstDecisionIds).toContain(id)
@@ -148,7 +156,7 @@ describe('E2E fragility scenarios', () => {
 
         const secondDecisionIds = secondBatch
             .filter((m) => m.type === 'decision')
-            .map((m) => /** @type {{ id: string }} */ (m.payload).id)
+            .map((m) => getDecisionContractId(m))
 
         for (const id of ids) {
             expect(secondDecisionIds).toContain(id)
@@ -304,7 +312,7 @@ describe('E2E fragility scenarios', () => {
 
         const decisionIds = bootstrap
             .filter((m) => m.type === 'decision')
-            .map((m) => /** @type {{ id: string }} */ (m.payload).id)
+            .map((m) => getDecisionContractId(m))
 
         expect(decisionIds.length).toBe(40)
         for (const id of created) {
@@ -369,7 +377,7 @@ describe('E2E fragility scenarios', () => {
 
         const decisionIds = finalBatch
             .filter((m) => m.type === 'decision')
-            .map((m) => /** @type {{ id: string }} */ (m.payload).id)
+            .map((m) => getDecisionContractId(m))
         expect(decisionIds.length).toBe(10)
     })
 

@@ -51,6 +51,7 @@ export class ContractStorage {
     readConnectors(): Promise<ConnectorState[]>;
     readConnector(id: string): Promise<ConnectorState | null>;
     storeResumeToken(contractId: string, token: string, expiresAt: string): Promise<void>;
+    readResumeToken(contractId: string): Promise<string | null>;
     consumeResumeToken(contractId: string, token: string): Promise<boolean>;
     writeSubtask(parentContract: BaseContract, parentFromStatus: string, childContract: BaseContract): Promise<boolean>;
     touchSignal(): Promise<void>;

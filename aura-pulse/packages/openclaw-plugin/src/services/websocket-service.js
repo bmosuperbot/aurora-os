@@ -10,6 +10,8 @@ import { WebSocketServer } from 'ws'
 import { SignalWatcher } from './signal-watcher.js'
 import {
     buildDecision,
+    buildClarificationAnswer,
+    buildSurfaceUpdate,
     buildClear,
     buildCompletion,
     buildConnectorRequest,
@@ -18,6 +20,24 @@ import {
 } from '../transport/websocket-protocol.js'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
+
+/**
+ * @typedef {object} ConnectorCardPayload
+ * @property {string} id
+ * @property {'openclaw-channel' | 'aura-connector'} source
+ * @property {'active' | 'pending' | 'declined' | 'error' | 'not-offered'} status
+ * @property {string} [offered_at]
+ * @property {boolean} [never_resurface]
+ * @property {string} capability_without
+ * @property {string} capability_with
+ * @property {string} connector_id
+ * @property {string} connector_name
+ * @property {string} offer_text
+ * @property {'browser_redirect' | 'secure_input' | 'manual_guide'} [flow_type]
+ * @property {string} [auth_url]
+ * @property {string} [input_label]
+ * @property {string[]} [guide_steps]
+ */
 
 /**
  * Manages the WebSocket server, connection registry, and signal-driven pushes.
@@ -89,7 +109,7 @@ export class WebSocketService {
 
     /**
      * Push a connector request card to all connected clients.
-     * @param {import('@aura/contract-runtime').ConnectorState} connector
+     * @param {ConnectorCardPayload} connector
      */
     pushConnectorRequest(connector) {
         this._broadcast(buildConnectorRequest(connector))
@@ -128,11 +148,28 @@ export class WebSocketService {
         try {
             const pending = await this._runtime.getPending()
             for (const contract of pending) {
-                this._send(ws, buildDecision(contract))
+                await this._sendDecision(ws, contract)
             }
         } catch (err) {
             this._logger.warn(`aura-pulse ws bootstrap error: ${String(err)}`)
         }
+    }
+
+    /**
+     * @param {import('ws').WebSocket} ws
+     * @param {BaseContract} contract
+     */
+    async _sendDecision(ws, contract) {
+        const resumeToken = await this._storage.readResumeToken(contract.id)
+        this._send(ws, buildDecision(contract, { resumeToken }))
+    }
+
+    /**
+     * @param {BaseContract} contract
+     */
+    async _broadcastDecision(contract) {
+        const resumeToken = await this._storage.readResumeToken(contract.id)
+        this._broadcast(buildDecision(contract, { resumeToken }))
     }
 
     /**
@@ -163,40 +200,41 @@ export class WebSocketService {
         case 'engage':
             // Resolver engaged — transition to resolver_active
             if (typeof payload['contractId'] === 'string') {
-                await this._runtime.transition(payload['contractId'], 'resolver_active', {
-                    id: 'pulse-surface',
-                    type: 'human',
-                })
+                const resolver = await this._getResolverActor(payload['contractId'])
+                await this._runtime.transition(payload['contractId'], 'resolver_active', resolver)
             }
             break
 
         case 'resolve':
             // Resolver commits — consume token and move to executing
             if (typeof payload['contractId'] === 'string' && typeof payload['token'] === 'string' && typeof payload['action'] === 'string') {
+                const resolver = await this._getResolverActor(payload['contractId'])
                 await this._runtime.resume(
                     payload['contractId'],
                     payload['token'],
-                    { id: 'pulse-surface', type: 'human' },
+                    resolver,
                     payload['action'],
                     payload['value'],
+                    typeof payload['artifacts'] === 'object' && payload['artifacts'] !== null
+                        ? /** @type {Record<string, unknown>} */ (payload['artifacts'])
+                        : undefined,
                 )
-                this._broadcast(buildClear(payload['contractId']))
+                this._broadcast(buildClear(payload['contractId'], 'resolved'))
             }
             break
 
         case 'abandon':
             // Resolver abandons — move back to waiting_approval
             if (typeof payload['contractId'] === 'string') {
-                await this._runtime.transition(payload['contractId'], 'waiting_approval', {
-                    id: 'pulse-surface',
-                    type: 'human',
-                })
+                const resolver = await this._getResolverActor(payload['contractId'])
+                await this._runtime.transition(payload['contractId'], 'waiting_approval', resolver)
             }
             break
 
         case 'ask_clarification':
             if (typeof payload['contractId'] === 'string' && typeof payload['question'] === 'string') {
-                await this._runtime.askClarification(payload['contractId'], payload['question'], 'pulse-surface')
+                const resolver = await this._getResolverActor(payload['contractId'])
+                await this._runtime.askClarification(payload['contractId'], payload['question'], resolver.id)
             }
             break
 
@@ -214,6 +252,30 @@ export class WebSocketService {
                         never_resurface: never,
                         updated_at: now,
                     })
+                    this.pushConnectorComplete(connId, 'declined')
+                }
+            }
+            break
+        }
+
+        case 'complete_connector': {
+            const connId = payload['connectorId']
+            if (typeof connId === 'string') {
+                const existing = await this._storage.readConnector(connId)
+                if (existing) {
+                    const now = new Date().toISOString()
+                    const {
+                        declined_at: _declinedAt,
+                        declined_reason: _declinedReason,
+                        ...rest
+                    } = existing
+                    await this._storage.writeConnector({
+                        ...rest,
+                        status: 'active',
+                        connected_at: existing.connected_at ?? now,
+                        updated_at: now,
+                    })
+                    this.pushConnectorComplete(connId, 'active')
                 }
             }
             break
@@ -229,18 +291,42 @@ export class WebSocketService {
         for (const contract of contracts) {
             switch (contract.status) {
             case 'waiting_approval':
-                this._broadcast(buildDecision(contract))
+                void this._broadcastDecision(contract)
                 break
+            case 'clarifying':
+                this._broadcast(buildSurfaceUpdate(contract))
+                break
+            case 'resolver_active': {
+                const latest = contract.clarifications?.[contract.clarifications.length - 1]
+                if (latest?.role === 'answer') {
+                    this._broadcast(buildClarificationAnswer(contract, latest))
+                } else {
+                    this._broadcast(buildSurfaceUpdate(contract))
+                }
+                break
+            }
             case 'complete':
-                this._broadcast(buildCompletion(contract.id, contract.result?.summary ?? 'completed'))
+                this._broadcast(buildCompletion(contract.id, contract.completion_surface ?? { summary: contract.result?.summary ?? 'completed' }))
                 break
             case 'failed':
-                this._broadcast(buildClear(contract.id))
+                this._broadcast(buildClear(contract.id, 'failed'))
                 break
             default:
                 break
             }
         }
+    }
+
+    /**
+     * @param {string} contractId
+     * @returns {Promise<import('@aura/contract-runtime').ParticipantRef>}
+     */
+    async _getResolverActor(contractId) {
+        const contract = await this._runtime.get(contractId)
+        if (!contract?.participants?.resolver) {
+            throw new Error(`Resolver not found for contract ${contractId}`)
+        }
+        return /** @type {import('@aura/contract-runtime').ParticipantRef} */ (contract.participants.resolver)
     }
 
     /** @param {string} message */

@@ -101,6 +101,10 @@ export function makeMockStorage() {
             store.resumeTokens.set(contractId, token)
         },
 
+        async readResumeToken(contractId) {
+            return store.resumeTokens.get(contractId) ?? null
+        },
+
         async consumeResumeToken(contractId, token) {
             const stored = store.resumeTokens.get(contractId)
             if (!stored || stored !== token) return false
@@ -163,6 +167,41 @@ export function makeMockRuntime(storageOverride) {
             return storage.updateContract(id, { status: newStatus, ...extra })
         },
 
+        async resume(id, token, resolver, action, value, artifacts) {
+            const stored = store.resumeTokens.get(id)
+            if (!stored || stored !== token) {
+                throw new Error(`Invalid resume token for contract ${id}`)
+            }
+            store.resumeTokens.delete(id)
+
+            return storage.updateContract(id, {
+                status: 'executing',
+                resume: {
+                    action,
+                    value,
+                    resolver_id: resolver.id,
+                    timestamp: new Date().toISOString(),
+                    ...(artifacts ? { artifacts } : {}),
+                },
+            })
+        },
+
+        async askClarification(id, question, resolverId) {
+            const existing = await storage.getContract(id)
+            if (!existing) throw new Error(`Contract not found: ${id}`)
+            const entry = {
+                id: randomUUID(),
+                role: 'question',
+                content: question,
+                participant: resolverId,
+                timestamp: new Date().toISOString(),
+            }
+            return storage.updateContract(id, {
+                status: 'clarifying',
+                clarifications: [...(existing.clarifications ?? []), entry],
+            })
+        },
+
         async logAutonomousAction(entry) {
             return storage.logAutonomousAction(entry)
         },
@@ -176,6 +215,10 @@ export function makeMockRuntime(storageOverride) {
             const token = randomUUID()
             store.resumeTokens.set(contractId, token)
             return token
+        },
+
+        async readResumeToken(contractId) {
+            return store.resumeTokens.get(contractId) ?? null
         },
 
         async getPending() {

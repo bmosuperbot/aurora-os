@@ -3,6 +3,9 @@
 version: 1.0 | status: implementation-ready
 date: March 27, 2026
 
+Current stabilization source of truth:
+`docs/plans/aura-os-phase3-stabilization-plan-v1.md`
+
 ---
 
 ## 01 — What Phase 3 Delivers
@@ -88,11 +91,11 @@ the A2UI research was complete.
 
 A2UI is now confirmed as the rendering layer for visual artifacts
 embedded in contracts. The official A2UI renderers are:
-- `@a2ui/react` (React 18/19) — complete, maintained, visual-parity
-  tested against the Lit reference implementation
+- `@a2ui/react` — React 18/19, stable on npm for the v0.8 line.
+  This is the renderer Pulse now uses directly.
 - `@a2ui/lit` (Lit) — reference implementation, produces web components
-- Angular — experimental
-- Flutter — placeholder, defers to GenUI SDK
+- Angular — in renderers/ directory, experimental
+- Flutter — defers to GenUI SDK
 
 There is no Vue renderer and none is planned in the A2UI roadmap.
 Integrating the Lit renderer as web components inside Vue is possible
@@ -105,10 +108,17 @@ an unmaintained detour.
 
 This is a deviation from the foundation doc. It is the correct call.
 
-### Decision 2 — A2UI v0.9 spec, custom Aura catalog
+### Decision 2 — A2UI v0.8 spec, custom Aura catalog
 
-A2UI v0.9 is the current stable, closed specification. v0.10 is
-active development, no stability guarantee. Build against v0.9.
+A2UI v0.8 is the current stable public release ("Public Preview").
+v0.9 is in active development in the google/A2UI repo alongside v0.8.
+
+**Correction from original plan:** The plan stated "v0.9 is the current stable,
+closed specification." This was incorrect. The actual state (verified March 27,
+2026 from google/A2UI):
+- Current spec: v0.8 (Public Preview)
+- v0.9 in-progress: parallel v0_9/ subdirectory in the repo
+- Default exports re-export v0_8 until v0_9 is stable
 
 A2UI allows — and recommends for production — defining your own
 catalog instead of using the basic catalog. The catalog restricts
@@ -408,11 +418,25 @@ connection badge in the UI reflects live status.
 
 ### Message dispatch
 
+Current repo reality: the Phase 2 plugin still uses a payload envelope on the
+wire. The PWA normalizes that envelope into the simpler internal message types
+used by the store.
+
+Wire examples:
+
+```typescript
+{ type: "decision", payload: { contract, resumeToken, a2uiMessages? } }
+{ type: "surface_update", payload: { contractId, surface } }
+{ type: "clear", payload: { contractId } }
+{ type: "completion", payload: { contractId, surface } }
+{ type: "resolve", payload: { contractId, token, action, value?, artifacts? } }
+```
+
 ```typescript
 // Runtime → Surface (inbound)
 type RuntimeMessage =
   | { type: "decision";              contract: BaseContract; a2uiMessages?: ServerToClientMessage[] }
-  | { type: "surface_update";        contract: BaseContract; a2uiMessages?: ServerToClientMessage[] }
+  | { type: "surface_update";        contractId?: string; surface?: BaseContract["surface"]; contract?: BaseContract; a2uiMessages?: ServerToClientMessage[] }
   | { type: "clarification_answer";  contractId: string; entry: ClarificationEntry }
   | { type: "clear";                 contractId: string; reason: "resolved" | "failed" | "timeout" }
   | { type: "completion";            contractId: string; surface: CompletionSurface }
@@ -423,7 +447,7 @@ type RuntimeMessage =
 type SurfaceMessage =
   | { type: "engage";             contractId: string; resolverId: string }
   | { type: "ask_clarification";  contractId: string; question: string }
-  | { type: "resolve";            contractId: string; action: string; artifacts?: Record<string, unknown> }
+  | { type: "resolve";            contractId: string; token: string; action: string; value?: unknown; artifacts?: Record<string, unknown> }
   | { type: "abandon";            contractId: string }
   | { type: "initiate_connector"; connectorId: string }
   | { type: "complete_connector"; connectorId: string; credentials?: unknown }
@@ -531,40 +555,44 @@ The `catalogId` used when the plugin generates A2UI surfaces for Aura:
 
 ### How A2UI renders inside a decision card
 
-When a `decision` message arrives with `a2uiMessages[]`:
+Pulse now uses the real `@a2ui/react` renderer directly. For streamed or
+pre-assembled A2UI message batches, the correct pattern is `A2UIProvider`
++ `useA2UI().processMessages()` + `A2UIRenderer`:
 
 ```typescript
 // ArtifactPanel.tsx
-import { A2UIProvider, A2UIRenderer, useA2UI, injectStyles } from "@a2ui/react";
+import { A2UIProvider, A2UIRenderer, useA2UI } from "@a2ui/react";
 
-injectStyles(); // once at app startup
-
-function ArtifactPanel({ a2uiMessages, onAction }) {
+function MessageProcessor({ messages }) {
   const { processMessages } = useA2UI();
 
   useEffect(() => {
-    processMessages(a2uiMessages);
-  }, [a2uiMessages]);
+    if (messages.length > 0) {
+      processMessages(messages);
+    }
+  }, [messages, processMessages]);
 
+  return null;
+}
+
+function ArtifactPanel({ a2uiMessages, contractId, onAction }) {
   return (
     <A2UIProvider onAction={onAction} theme={auraTheme}>
-      <A2UIRenderer surfaceId="artifact" />
+      <MessageProcessor messages={a2uiMessages} />
+      <A2UIRenderer surfaceId={`artifact-${contractId}`} />
     </A2UIProvider>
   );
 }
 ```
 
-The `onAction` callback intercepts button clicks inside the artifact.
-For `ActionButton` components the agent embeds in the artifact (e.g.,
-"Approve This Draft"), the action dispatches back through the
-SurfaceProtocol WebSocket as a `resolve` message — not as an A2UI
-client-to-server event. The artifact buttons control the contract
-lifecycle, not the A2UI surface lifecycle.
+`onAction` receives an `A2UIActionEvent` (`{ surfaceId, action: { name } }`)
+when the user clicks an `ActionButton` inside the artifact. The `action.name`
+field maps to the action dispatched back through the SurfaceProtocol WebSocket.
 
-For artifact edits (inline TextField changes), the data model
-accumulates in A2UI's local state. On Resolver commit, the PWA
-reads the current A2UI data model and attaches it to the `resolve`
-message as `artifacts`.
+For Aura-owned editable artifact fields, Pulse captures the draft explicitly in
+the Aura catalog component layer and includes it in the `resolve` WebSocket
+message as `artifacts`. This is simpler and more predictable than depending on
+undocumented internal surface state shape.
 
 ### A2UI theme for Aura
 
@@ -785,7 +813,7 @@ descending, rendered from the Phase 2 plugin's history HTTP route.
 
 ```
 GET /aura/history?limit=50&offset=0&type=<optional>
-→ JSON array of BaseContract (completed + failed)
+→ JSON object: `{ contracts, hasMore, total }`
 ```
 
 The plugin registers this HTTP route in Phase 2. Phase 3 consumes it.
@@ -1128,16 +1156,21 @@ wait for a final stable release and a clear upgrade guide.
 The following are confirmed from the A2UI documentation and must
 be respected in implementation.
 
-- A2UI v0.9 is closed and stable. Build against it.
-  Target npm package `@a2ui/react` pinned to v0.9-compatible release.
+- A2UI v0.8 is the stable target for Phase 3.
+  Target npm package `@a2ui/react` pinned to a v0.8-compatible release.
 
 - `@a2ui/react` requires React 18.x or 19.x. Use 18.x for stability.
 
-- The `@a2ui/web_core` package is a peer dependency of `@a2ui/react`.
-  Pin both versions together — the README warns about version drift.
+- The Pulse repo now uses the real `@a2ui/react` package directly.
+  No local renderer stub is needed for the current implementation.
+
+- The React renderer depends on the shared web core implementation.
+  Keep the renderer and web-core versions in the same compatible v0.8 line.
 
 - `injectStyles()` must be called **once** at app startup, before
-  any A2UI components render. Place in `src/main.tsx`.
+  any A2UI components render. In the current React renderer,
+  `A2UIProvider` already injects the structural styles automatically.
+  An explicit startup call is optional, not required.
 
 - `initializeDefaultCatalog()` must also be called once at startup,
   before any `A2UIProvider` mounts.

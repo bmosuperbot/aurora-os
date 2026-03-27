@@ -68,6 +68,14 @@ function collectMessages(ws, n, timeout = 2000) {
 }
 
 /**
+ * @param {any} message
+ * @returns {string | undefined}
+ */
+function getDecisionContractId(message) {
+    return message?.payload?.contract?.id ?? message?.payload?.id
+}
+
+/**
  * Build a minimal AuraPluginConfig for the WebSocket service.
  *
  * @param {number} port
@@ -137,7 +145,7 @@ describe('WebSocketService', () => {
 
         const decisionMsg = msgs.find(m => m.type === 'decision')
         expect(decisionMsg).toBeTruthy()
-        expect(/** @type {any} */ (decisionMsg).payload.id).toBe(CONTRACT_ID)
+        expect(getDecisionContractId(decisionMsg)).toBe(CONTRACT_ID)
     })
 
     it('broadcasts to all connected clients', async () => {
@@ -160,6 +168,43 @@ describe('WebSocketService', () => {
 
         ws1.close()
         ws2.close()
+    })
+
+    it('marks connector active and broadcasts connector_complete on complete_connector', async () => {
+        const { runtime, storage, store } = makeMockRuntime()
+        store.connectors.set('gmail', {
+            id: 'gmail',
+            source: 'aura-connector',
+            status: 'pending',
+            offered_at: new Date().toISOString(),
+            capability_without: 'Aura cannot send the kickoff email automatically.',
+            capability_with: 'Aura can send the kickoff email automatically.',
+            updated_at: new Date().toISOString(),
+        })
+
+        svc = new WebSocketService(makeCfg(port), runtime, storage, signalPath, fakeLogger)
+        await svc.start()
+
+        ws = await openWs(port)
+        const messagesPromise = collectMessages(ws, 1, 2000)
+
+        ws.send(JSON.stringify({
+            type: 'complete_connector',
+            payload: {
+                connectorId: 'gmail',
+                credentials: { key: 'secret-123' },
+            },
+        }))
+
+        const msgs = await messagesPromise
+        const completed = msgs.find(m => m.type === 'connector_complete')
+        expect(completed).toBeTruthy()
+        expect(completed?.payload?.connectorId).toBe('gmail')
+        expect(completed?.payload?.status).toBe('active')
+
+        const connector = store.connectors.get('gmail')
+        expect(connector?.status).toBe('active')
+        expect(connector?.connected_at).toBeTruthy()
     })
 
     it('stops the server cleanly', async () => {

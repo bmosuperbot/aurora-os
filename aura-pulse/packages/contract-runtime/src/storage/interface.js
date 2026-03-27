@@ -107,6 +107,14 @@ export class ContractStorage {
     async storeResumeToken(contractId, token, expiresAt) { throw new Error('not implemented') }
 
     /**
+     * Read the current unexpired resume token for a contract without consuming it.
+     * Returns null if none exists.
+     * @param {string} contractId
+     * @returns {Promise<string | null>}
+     */
+    async readResumeToken(contractId) { throw new Error('not implemented') }
+
+    /**
      * Consume a resume token. Atomically deletes it if valid and unexpired.
      * Returns true if the token existed and was consumed. False otherwise.
      * @param {string} contractId

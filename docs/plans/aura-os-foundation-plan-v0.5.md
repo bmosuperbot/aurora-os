@@ -1088,7 +1088,7 @@ api.runtime.agent.resolveAgentWorkspaceDir(agentId)
 
 ## 15 — The Pulse PWA
 
-Vue 3 PWA. WebSocket client implementing full SurfaceProtocol.
+React PWA. WebSocket client implementing full SurfaceProtocol.
 Standalone — not OpenClaw Canvas. Connects to WebSocket on port 7700.
 Served as static files by the plugin's HTTP route.
 
@@ -1229,7 +1229,7 @@ works via CLI. Engram receives completion notifications.
 ### Phase 3 — Pulse PWA
 **Target: full lifecycle works end to end with generic contracts**
 
-- Vue 3 PWA scaffold
+- React PWA scaffold
 - WebSocket client — full SurfaceProtocol implementation
 - All surface states — Silent through Completion
 - Voice layer — system TTS prototype, ElevenLabs production path
@@ -1654,7 +1654,7 @@ strong implementation reason.
 | Multi-business model | Future phase — separate PARA trees per .aurora package |
 | New business onboarding tool | aura_onboard — deterministic, idempotent, future phase |
 | Agent topology | Depth 0 primary, depth 1 orchestrator, depth 2 workers |
-| Human-facing surface | Pulse PWA (Vue 3, standalone, not OpenClaw Canvas) |
+| Human-facing surface | Pulse PWA (React, standalone, not OpenClaw Canvas) |
 | Auth (OpenClaw services) | OpenClaw channel connectors (inherit existing OAuth) |
 | Auth (custom services) | AuraConnectorStore in contracts.db, encrypted tokens |
 | Plugin SDK surface | `openclaw/plugin-sdk/*` subpaths only |
