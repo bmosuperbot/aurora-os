@@ -12,6 +12,7 @@
         "test":          "vitest run",
         "test:watch":    "vitest",
         "test:coverage": "vitest run --coverage",
+        "demo:artist":   "node tests/manual/artist-reseller-demo.mjs",
         "typecheck":     "tsc -p jsconfig.json --noEmit",
         "lint":          "eslint src tests index.js setup-entry.js api.js runtime-api.js",
         "lint:fix":      "eslint src tests index.js setup-entry.js api.js runtime-api.js --fix"

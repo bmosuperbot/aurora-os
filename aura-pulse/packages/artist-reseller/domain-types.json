@@ -1,0 +1,77 @@
+{
+  "version": "1.0",
+  "types": [
+    {
+      "type": "offer-received",
+      "version": "1.0",
+      "description": "A marketplace offer has arrived and the owner must decide how to respond.",
+      "execution_goal": {
+        "counter": "The owner has chosen to counter this offer. Use the gog gmail skill to reply to the buyer on thread {{gmail_thread_id}} using the response_body from the resolver artifacts as the message body. Then call aura_log_action with action='email_response_sent' and connector_used='gmail'. Finally call aura_complete_contract.",
+        "accept":  "The owner has accepted this offer. Use the gog gmail skill to send an acceptance reply on thread {{gmail_thread_id}}. Then call aura_log_action with action='email_response_sent' and connector_used='gmail'. Finally call aura_complete_contract.",
+        "decline": "The owner has declined this offer. Only send a reply if decline_with_message is true in the resolver artifacts. Call aura_complete_contract when done."
+      },
+      "fields": [
+        { "name": "platform",         "type": "string", "required": true },
+        { "name": "listing_id",        "type": "string", "required": true },
+        { "name": "listing_title",     "type": "string", "required": true },
+        { "name": "offer_amount",      "type": "number", "required": true, "min": 0 },
+        { "name": "asking_price",      "type": "number", "required": false, "min": 0 },
+        { "name": "buyer_id",          "type": "string", "required": false },
+        { "name": "buyer_history",     "type": "string", "required": false },
+        { "name": "gmail_thread_id",   "type": "string", "required": false },
+        { "name": "gmail_message_id",  "type": "string", "required": false }
+      ]
+    },
+    {
+      "type": "listing-draft",
+      "version": "1.0",
+      "description": "A listing draft is ready for owner review before publishing to a marketplace platform.",
+      "execution_goal": {
+        "approve": "The owner has approved this listing draft. Publish it to {{platform}} using the available platform tool or skill. Then call aura_log_action with action='listing_published' and aura_complete_contract.",
+        "revise":  "The owner has requested revisions. Update the draft at {{draft_path}} with the changes from the resolver artifacts. Call aura_complete_contract when the draft is saved.",
+        "discard": "The owner has discarded this draft. Archive or delete the file at {{draft_path}}. Call aura_complete_contract."
+      },
+      "fields": [
+        { "name": "platform",      "type": "string", "required": true },
+        { "name": "listing_id",    "type": "string", "required": true },
+        { "name": "listing_title", "type": "string", "required": true },
+        { "name": "draft_status",  "type": "string", "required": true, "enum": ["draft", "ready", "needs_photos"] },
+        { "name": "draft_path",    "type": "string", "required": true },
+        { "name": "category",      "type": "string", "required": true }
+      ]
+    },
+    {
+      "type": "shipping-delay",
+      "version": "1.0",
+      "description": "A shipment is delayed and the owner must decide whether to notify the buyer.",
+      "execution_goal": {
+        "notify":  "The owner wants to notify the buyer of the delay. Use the gog gmail skill to send a message to the buyer. The message template is in the resolver artifacts under response_body. Then call aura_log_action with action='buyer_notified' and aura_complete_contract.",
+        "ignore":  "The owner has decided not to notify the buyer. Call aura_complete_contract."
+      },
+      "fields": [
+        { "name": "platform",        "type": "string", "required": true },
+        { "name": "order_id",        "type": "string", "required": true },
+        { "name": "carrier",         "type": "string", "required": true },
+        { "name": "tracking_number", "type": "string", "required": true },
+        { "name": "expected_date",   "type": "string", "required": true },
+        { "name": "delay_reason",    "type": "string", "required": true }
+      ]
+    },
+    {
+      "type": "inventory-alert",
+      "version": "1.0",
+      "description": "Inventory is running low in a category. Owner should review the restock suggestion.",
+      "execution_goal": {
+        "restock": "The owner has approved the restock suggestion. Record the restock decision in the PARA resources folder under resources/platform-policies/. Call aura_log_action with action='restock_approved' and aura_complete_contract.",
+        "dismiss": "The owner has dismissed the alert. Call aura_complete_contract."
+      },
+      "fields": [
+        { "name": "platform",           "type": "string", "required": true },
+        { "name": "category",           "type": "string", "required": true },
+        { "name": "current_stock",      "type": "number", "required": true, "min": 0 },
+        { "name": "sold_last_30_days",  "type": "number", "required": true, "min": 0 },
+        { "name": "restock_suggestion", "type": "string", "required": true }
+      ]
+    }
+  ]
+}

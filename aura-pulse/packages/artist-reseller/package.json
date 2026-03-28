@@ -1,0 +1,9 @@
+{
+    "name": "@aura/artist-reseller",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "devDependencies": {
+        "@aura/contract-runtime": "workspace:*"
+    }
+}

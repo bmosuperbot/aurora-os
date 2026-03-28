@@ -12,6 +12,7 @@ describe('normalizeConfig', () => {
         expect(cfg.engramHttpUrl).toBe('http://localhost:4318')
         expect(cfg.pulseStaticDir).toBeNull()
         expect(cfg.projectRootOverride).toBeNull()
+        expect(cfg.accountIds).toEqual({})
     })
 
     it('preserves explicit values over defaults', () => {
@@ -24,6 +25,7 @@ describe('normalizeConfig', () => {
             engramHttpUrl: 'http://engram:8080',
             pulseStaticDir: '/dist/pulse',
             projectRootOverride: '/projects',
+            accountIds: { gmail: 'studio-ops@gmail.com' },
         })
         expect(cfg.auraRoot).toBe('/my/aura')
         expect(cfg.workspaceId).toBe('ws-42')
@@ -33,6 +35,7 @@ describe('normalizeConfig', () => {
         expect(cfg.engramHttpUrl).toBe('http://engram:8080')
         expect(cfg.pulseStaticDir).toBe('/dist/pulse')
         expect(cfg.projectRootOverride).toBe('/projects')
+        expect(cfg.accountIds).toEqual({ gmail: 'studio-ops@gmail.com' })
     })
 
     it('fills in only missing fields when given partial config', () => {

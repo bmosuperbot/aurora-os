@@ -27,7 +27,7 @@
  *
  * @typedef {object} ConnectorCardPayload
  * @property {string} id
- * @property {'openclaw-channel' | 'aura-connector'} source
+ * @property {'openclaw-channel' | 'aura-connector' | 'aura-skill' | 'aura-app'} source
  * @property {'active' | 'pending' | 'declined' | 'error' | 'not-offered'} status
  * @property {string} [offered_at]
  * @property {boolean} [never_resurface]

@@ -469,7 +469,11 @@ Connector state lives in contracts.db — one database, one backup.
 ```typescript
 interface ConnectorState {
   id: string;
-  source: "openclaw-channel" | "aura-connector";
+  // openclaw-channel: OpenClaw manages OAuth (Gmail, Calendar, Drive, Slack)
+  // aura-connector:   REST API; Aura holds the key (Etsy, eBay, Shippo)
+  // aura-skill:       Official CLI tool manages its own auth (gog, stripe CLI)
+  // aura-app:         No API; browser automation via pm2/docker process
+  source: "openclaw-channel" | "aura-connector" | "aura-skill" | "aura-app";
   status: "active" | "pending" | "declined" | "error" | "not-offered";
   offered_at?: string;
   connected_at?: string;
@@ -483,6 +487,9 @@ interface ConnectorState {
   oauth_token?: string;         // encrypted
   refresh_token?: string;       // encrypted
   expires_at?: string;
+  // aura-app fields
+  process_manager?: "pm2" | "docker"; // detected at deploy time
+  app_path?: string;            // ~/.aura/projects/<workspace>/apps/<name>/
 }
 ```
 
@@ -501,8 +508,14 @@ encrypted tokens in connectors.db.
 types key. Returns via WebSocket. Plugin stores encrypted in
 connectors.db.
 
-**manual-guide** — no API. Agent guides owner verbally + visual
-steps in Pulse surface. Used for Poshmark, Mercari.
+**aura-skill** — CLI tool manages its own auth (e.g. gog, stripe CLI).
+Plugin calls the CLI via exec tool (allowlisted). No token stored in
+contracts.db — the CLI keychain owns the credential.
+
+**manual-guide** — API key entered via secure-input card, or initial
+setup guided verbally. Used for Etsy (Phase 4 initial), eBay (Phase 5
+OAuth replaces this). Not used for Poshmark or Mercari — those are
+`aura-app` (browser automation), not connector flows.
 
 ---
 
@@ -1247,11 +1260,22 @@ flow works end to end with generic contracts.
 ### Phase 4 — Artist reseller scenario
 **Target: real email, real decision, full six-beat demo**
 
-- `offer-received` and `listing-draft` contract types registered
-- Artist reseller `.aurora` package scaffold
-- Agent's own Gmail provisioned via connector flow
-- Etsy connector (aura-connector, manual-guide fallback if API limited)
-- Owner forwards offer email to agent's address
+- `offer-received`, `listing-draft`, `shipping-delay`, `inventory-alert`
+  domain types registered and tested
+- Artist reseller `.aurora` package scaffold with `aurora.manifest.yaml`,
+  `aurora-registry.json`, `openclaw.json.template`, `aura-app` stub
+- Gmail via gog/Pub/Sub: `gog gmail watch serve` daemon → `POST /hooks/gmail`
+  → OpenClaw mapping → agent turn. No custom OAuth. Agent is the email
+  parser. One-time setup via `openclaw webhooks gmail setup` wizard.
+- Etsy connector (aura-connector, manual-guide API key flow),
+  `aura_query_listing` tool for live asking price
+- `aurora-registry.json` bootstrap: installs required plugins via
+  `openclaw plugins install` at gateway start; writes `plugins.allow`
+  to `openclaw.json` (walled garden enforcement delegated to OpenClaw)
+- Pulse onboarding surface: registry install checklist, optional items
+  tap-to-install. User never sees a terminal.
+- Response dispatch: after Resolver commits, agent calls `gog gmail reply`
+  via exec tool to send from agent's Gmail account
 - End-to-end: forwarded email → agent reasons → contract created →
   deferred to owner's wake time → card appears → voice speaks →
   Resolver engages → clarification if needed → Resolver edits draft →
@@ -1260,7 +1284,31 @@ flow works end to end with generic contracts.
 
 **Done when:** Full six-beat demo cycle runs on a real forwarded email.
 
-### Phase 5 — Non-profit scenario
+### Phase 5 — Multi-platform `.aurora` real build
+**Target: connector patterns harden, npm packages ship, aura-app proven**
+
+- Extract Phase 4 Etsy built-in → `@aura/etsy-connector` npm package
+  (proper structure, tests, published to npm, installed via
+  `openclaw plugins install @aura/etsy-connector`)
+- `@aura/ebay-connector` — eBay OAuth 2.0 user token flow; first real
+  OAuth `aura-connector`; hardens the browser-redirect auth pattern
+- `@aura/poshmark-app` — Poshmark `aura-app`; Fastify + Lobster pipelines;
+  approval gates wired to Aura contracts instead of Telegram
+- `@aura/mercari-app` — Mercari `aura-app`; same scaffold as Poshmark;
+  different selectors
+- eBay `offer-received` platform variant fields: `ebay_item_id`,
+  `ebay_order_id`
+- `aurora.manifest.yaml` with five real connectors: gmail, etsy, ebay,
+  poshmark-app, mercari-app — this is where manifest bugs surface
+- `aura_install_expert` tool — Pulse Expert Store install flow;
+  validates purchase, appends to `plugins.allow`, calls install CLI
+- Pulse Expert Store surface — browse and tap-to-install certified packages
+- Multi-connector state management in Pulse onboarding checklist
+
+**Done when:** All five connectors active in one `.aurora` instance.
+Expert Store install flow works end to end. First `@aura/` npm packages live.
+
+### Phase 6 — Non-profit scenario
 **Target: second vertical proves generality**
 
 - `grant-report-draft` and `donor-acknowledgment-batch` types
@@ -1273,7 +1321,7 @@ flow works end to end with generic contracts.
 **Done when:** Second scenario runs without Phase 1-2 changes.
 The generality of the foundation is proven.
 
-### Phase 6 — Onboarding flow
+### Phase 7 — Onboarding flow
 **Target: cold start to first autonomous action**
 
 - Onboarding YAML for both packages

@@ -1,6 +1,9 @@
 export interface ConnectorState {
     id: string;
-    source: 'openclaw-channel' | 'aura-connector';
+    source: 'openclaw-channel' | 'aura-connector' | 'aura-skill' | 'aura-app';
+    // aura-app TODO(phase-5): pm2 or docker process managed app.
+    // Reference implementation: posh-pusher pattern.
+    // Agent scaffolds; Aura manages lifecycle via exec tool.
     status: 'active' | 'pending' | 'declined' | 'error' | 'not-offered';
     offered_at?: string;
     connected_at?: string;

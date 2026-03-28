@@ -1,4 +1,5 @@
 import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 
 /**
  * @import { AuraPluginConfig } from '../config/schema.js'
@@ -43,6 +44,12 @@ export class ContractRuntimeService {
         this._runtime.registerType(grantReportDraftType)
 
         await this._runtime.initialize()
+
+        // Artist-reseller subdirs — idempotent, safe on every workspace
+        mkdirSync(join(paths.para.areas, 'inventory'), { recursive: true })
+        mkdirSync(join(paths.para.areas, 'buyer-patterns'), { recursive: true })
+        mkdirSync(join(paths.para.resources, 'platform-policies'), { recursive: true })
+        mkdirSync(join(paths.projectsDir, 'apps'), { recursive: true })
     }
 
     async stop() {

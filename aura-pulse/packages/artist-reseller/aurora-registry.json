@@ -1,0 +1,52 @@
+{
+  "version": "1.0",
+  "plugins": {
+    "required": [
+      {
+        "id": "engram",
+        "package": "@openclaw/engram",
+        "version": "2.1.0",
+        "tier": "free",
+        "description": "Persistent memory and entity profiles for the agent."
+      },
+      {
+        "id": "lobster",
+        "package": "@clawdbot/lobster",
+        "version": "latest",
+        "tier": "free",
+        "description": "Pipeline runner for multi-step browser automation."
+      }
+    ],
+    "optional": [
+      {
+        "id": "expert/etsy-connector",
+        "package": "@aura/etsy-connector",
+        "version": "1.0.0",
+        "tier": "paid",
+        "purchaseToken": null,
+        "description": "Live Etsy listing price lookup and inventory management.",
+        "note": "Phase 4 ships the built-in aura-connector implementation. This entry is the future Expert Store bundle form."
+      }
+    ]
+  },
+  "tools": [
+    {
+      "id": "etsy-lookup",
+      "module": "./tools/etsy-lookup.js",
+      "connector": "etsy",
+      "description": "Fetch the current asking price for an Etsy listing. Requires the Etsy connector to be active.",
+      "contributes": ["aura_query_listing"]
+    }
+  ],
+  "openclawConfig": {
+    "plugins": {
+      "allow": ["aura-pulse", "engram", "lobster", "browser"],
+      "load": {
+        "paths": ["~/.aura/packages/openclaw-plugin/index.js"]
+      }
+    },
+    "tools": {
+      "alsoAllow": ["lobster", "browser", "exec"]
+    }
+  }
+}

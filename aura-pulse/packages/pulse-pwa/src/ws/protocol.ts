@@ -88,6 +88,13 @@ export interface ConnectorCard {
   guide_steps?: string[];  // manual_guide only
 }
 
+export interface OnboardingStatusItem {
+  id: string;
+  label: string;
+  status: "installed" | "missing" | "not-installed" | "pending";
+  tier: "required" | "optional";
+}
+
 export interface BaseContract {
   id: string;
   version?: string;
@@ -165,7 +172,12 @@ export type RuntimeMessage =
       surface: CompletionSurface;
     }
   | { type: "connector_request"; card: ConnectorCard }
-  | { type: "connector_complete"; connectorId: string };
+  | { type: "connector_complete"; connectorId: string }
+  | {
+      type: "onboarding_status";
+      items: OnboardingStatusItem[];
+      incomplete: boolean;
+    };
 
 // ── Surface → Runtime messages ───────────────────────────────────────────────
 

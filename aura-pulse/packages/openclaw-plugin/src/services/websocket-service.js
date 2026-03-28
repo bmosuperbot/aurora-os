@@ -7,7 +7,23 @@ import { WebSocketServer } from 'ws'
  * @import { SQLiteContractStorage } from '@aura/contract-runtime'
  */
 
+import { AuraConnectorStore } from '../connectors/aura-connector-store.js'
 import { SignalWatcher } from './signal-watcher.js'
+
+
+/**
+ * @typedef {object} OnboardingStatusItem
+ * @property {string} id
+ * @property {string} label
+ * @property {'installed' | 'missing' | 'not-installed' | 'pending'} status
+ * @property {'required' | 'optional'} tier
+ */
+
+/**
+ * @typedef {object} OnboardingStatus
+ * @property {OnboardingStatusItem[]} items
+ * @property {boolean} incomplete
+ */
 import {
     buildDecision,
     buildClarificationAnswer,
@@ -24,7 +40,7 @@ const HEARTBEAT_INTERVAL_MS = 30_000
 /**
  * @typedef {object} ConnectorCardPayload
  * @property {string} id
- * @property {'openclaw-channel' | 'aura-connector'} source
+ * @property {'openclaw-channel' | 'aura-connector' | 'aura-skill' | 'aura-app'} source
  * @property {'active' | 'pending' | 'declined' | 'error' | 'not-offered'} status
  * @property {string} [offered_at]
  * @property {boolean} [never_resurface]
@@ -50,13 +66,15 @@ export class WebSocketService {
      * @param {SQLiteContractStorage} storage
      * @param {string} signalPath
      * @param {PluginLogger} logger
+     * @param {OnboardingStatus | null} [onboardingStatus]
      */
-    constructor(config, runtime, storage, signalPath, logger) {
+    constructor(config, runtime, storage, signalPath, logger, onboardingStatus = null) {
         /** @type {AuraPluginConfig} */ this._config = config
         /** @type {ContractRuntime} */ this._runtime = runtime
         /** @type {SQLiteContractStorage} */ this._storage = storage
         /** @type {string} */ this._signalPath = signalPath
         /** @type {PluginLogger} */ this._logger = logger
+        /** @type {OnboardingStatus | null} */ this._onboardingStatus = onboardingStatus
         /** @type {WebSocketServer | null} */ this._wss = null
         /** @type {SignalWatcher | null} */ this._watcher = null
         /** @type {ReturnType<typeof setInterval> | null} */ this._heartbeatTimer = null
@@ -146,6 +164,15 @@ export class WebSocketService {
     /** @param {import('ws').WebSocket} ws */
     async _bootstrapClient(ws) {
         try {
+            // Push onboarding status if registry is incomplete
+            if (this._onboardingStatus) {
+                this._send(ws, JSON.stringify({
+                    type: 'onboarding_status',
+                    items: this._onboardingStatus.items,
+                    incomplete: this._onboardingStatus.incomplete,
+                }))
+            }
+
             const pending = await this._runtime.getPending()
             for (const contract of pending) {
                 await this._sendDecision(ws, contract)
@@ -209,17 +236,24 @@ export class WebSocketService {
             // Resolver commits — consume token and move to executing
             if (typeof payload['contractId'] === 'string' && typeof payload['token'] === 'string' && typeof payload['action'] === 'string') {
                 const resolver = await this._getResolverActor(payload['contractId'])
+                const artifacts = typeof payload['artifacts'] === 'object' && payload['artifacts'] !== null
+                    ? /** @type {Record<string, unknown>} */ (payload['artifacts'])
+                    : undefined
+
                 await this._runtime.resume(
                     payload['contractId'],
                     payload['token'],
                     resolver,
                     payload['action'],
                     payload['value'],
-                    typeof payload['artifacts'] === 'object' && payload['artifacts'] !== null
-                        ? /** @type {Record<string, unknown>} */ (payload['artifacts'])
-                        : undefined,
+                    artifacts,
                 )
                 this._broadcast(buildClear(payload['contractId'], 'resolved'))
+                // TODO(phase-5): ContractExecutor.wake(payload['contractId'])
+                // The runtime has already transitioned to 'executing'.
+                // The executor reads resume.artifacts, substitutes execution_goal
+                // tokens from contract context, and invokes the agent with the
+                // package-supplied tools in scope.
             }
             break
 
@@ -259,7 +293,8 @@ export class WebSocketService {
         }
 
         case 'complete_connector': {
-            const connId = payload['connectorId']
+            const connId     = payload['connectorId']
+            const credential = payload['credential']  // optional — Etsy API key etc.
             if (typeof connId === 'string') {
                 const existing = await this._storage.readConnector(connId)
                 if (existing) {
@@ -269,12 +304,19 @@ export class WebSocketService {
                         declined_reason: _declinedReason,
                         ...rest
                     } = existing
-                    await this._storage.writeConnector({
+                    const update = {
                         ...rest,
-                        status: 'active',
+                        status: /** @type {'active'} */ ('active'),
                         connected_at: existing.connected_at ?? now,
                         updated_at: now,
-                    })
+                    }
+                    if (typeof credential === 'string' && credential.length > 0) {
+                        // Store via AuraConnectorStore to get AES-256 encryption
+                        const store = new AuraConnectorStore(this._storage, this._logger)
+                        await store.write({ ...update, oauth_token_enc: credential })
+                    } else {
+                        await this._storage.writeConnector(update)
+                    }
                     this.pushConnectorComplete(connId, 'active')
                 }
             }

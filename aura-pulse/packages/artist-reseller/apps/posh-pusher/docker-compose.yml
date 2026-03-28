@@ -1,0 +1,10 @@
+services:
+  posh-pusher:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3456:3456"
+    env_file:
+      - .env
+    volumes:
+      - ./db:/app/db

@@ -8,7 +8,7 @@ import { Type } from '@sinclair/typebox'
 /**
  * @typedef {object} ConnectorCardPayload
  * @property {string} id
- * @property {'openclaw-channel' | 'aura-connector'} source
+ * @property {'openclaw-channel' | 'aura-connector' | 'aura-skill' | 'aura-app'} source
  * @property {'active' | 'pending' | 'declined' | 'error' | 'not-offered'} status
  * @property {string} [offered_at]
  * @property {boolean} [never_resurface]
@@ -67,16 +67,24 @@ export function buildRequestConnection(storage, wsService) {
             await storage.writeConnector(state)
 
             // Push the connector card to connected surfaces
+            const flowType = /** @type {'browser_redirect' | 'secure_input' | 'manual_guide' | undefined} */ (
+                p.flow_type ?? (p.auth_url ? 'browser_redirect' : p.input_label ? 'secure_input' : p.guide_steps ? 'manual_guide' : undefined)
+            )
             /** @type {ConnectorCardPayload} */
             const card = {
-                ...state,
-                connector_id: p.connector_id,
-                connector_name: p.display_name,
-                offer_text: p.reason,
-                flow_type: p.flow_type ?? (p.auth_url ? 'browser_redirect' : p.input_label ? 'secure_input' : p.guide_steps ? 'manual_guide' : undefined),
-                auth_url: p.auth_url,
-                input_label: p.input_label,
-                guide_steps: p.guide_steps,
+                id:                 state.id,
+                source:             /** @type {'aura-connector'} */ (state.source),
+                status:             state.status,
+                capability_without: state.capability_without,
+                capability_with:    state.capability_with,
+                connector_id:       p.connector_id,
+                connector_name:     p.display_name,
+                offer_text:         p.reason,
+                ...(state.offered_at ? { offered_at: state.offered_at } : {}),
+                ...(flowType        ? { flow_type:   flowType }          : {}),
+                ...(p.auth_url      ? { auth_url:    p.auth_url }        : {}),
+                ...(p.input_label   ? { input_label: p.input_label }     : {}),
+                ...(p.guide_steps   ? { guide_steps: p.guide_steps }     : {}),
             }
             wsService.pushConnectorRequest(card)
 

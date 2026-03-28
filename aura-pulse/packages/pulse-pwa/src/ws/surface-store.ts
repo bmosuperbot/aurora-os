@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type {
   BaseContract,
   ConnectorCard,
+  OnboardingStatusItem,
   A2UIMessage,
   RuntimeMessage,
   SurfaceMessage,
@@ -67,6 +68,8 @@ export interface SurfaceState {
   artifactUnderlyingMode: SurfaceMode;
   connectorCard: ConnectorCard | null;
   connectorUnderlyingMode: SurfaceMode;
+  onboardingOpen: boolean;
+  onboardingItems: OnboardingStatusItem[];
   historyOpen: boolean;
   briefOpen: boolean;
   wsStatus: "connected" | "reconnecting" | "disconnected";
@@ -84,6 +87,7 @@ export interface SurfaceState {
   openArtifactReview: () => void;
   closeArtifactReview: () => void;
   dismissCompletion: () => void;
+  dismissOnboarding: () => void;
 }
 
 // ── Store implementation ──────────────────────────────────────────────────────
@@ -97,6 +101,8 @@ export const useSurfaceStore = create<SurfaceState>((set, get) => ({
   artifactUnderlyingMode: "silent",
   connectorCard: null,
   connectorUnderlyingMode: "silent",
+  onboardingOpen: false,
+  onboardingItems: [],
   historyOpen: false,
   briefOpen: false,
   wsStatus: "disconnected",
@@ -226,6 +232,13 @@ export const useSurfaceStore = create<SurfaceState>((set, get) => ({
         });
         break;
       }
+
+      case "onboarding_status": {
+        if (msg.incomplete) {
+          set({ onboardingOpen: true, onboardingItems: msg.items });
+        }
+        break;
+      }
     }
   },
 
@@ -295,4 +308,6 @@ export const useSurfaceStore = create<SurfaceState>((set, get) => ({
     }
     set({ mode: "silent", contract: null, a2uiMessages: [], completionSurface: null });
   },
+
+  dismissOnboarding: () => set({ onboardingOpen: false }),
 }));

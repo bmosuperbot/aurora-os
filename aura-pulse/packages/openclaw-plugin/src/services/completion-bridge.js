@@ -5,6 +5,15 @@
  */
 
 /**
+ * Context field names whose values are long-form prose — excluded from Engram tags.
+ * Everything else that fits in 64 chars is promoted automatically.
+ */
+const PROSE_FIELDS = new Set([
+    'message', 'description', 'summary', 'notes', 'body',
+    'buyer_history', 'restock_suggestion', 'delay_reason',
+])
+
+/**
  * Implements CompletionNotifier by POSTing completed contracts to Engram's
  * stable HTTP memory write endpoint.
  *
@@ -44,7 +53,7 @@ export class EngramCompletionBridge {
             content,
             category: 'decision',
             confidence: 0.9,
-            tags: ['aura-contract', `type:${contract.type}`, `id:${contract.id}`],
+            tags: this._buildTags(contract),
         })
 
         try {
@@ -68,12 +77,71 @@ export class EngramCompletionBridge {
     }
 
     /**
+     * Renders a structured, human-readable summary of any contract type.
+     * No per-type branching — works generically for all current and future types.
+     *
      * @param {BaseContract} contract
      * @returns {string}
      */
     _buildContent(contract) {
-        const goal    = contract.intent?.goal ?? 'unknown goal'
-        const outcome = contract.result?.summary ?? 'completed'
-        return `Aura contract completed. Type: ${contract.type}. ID: ${contract.id}. Goal: ${goal}. Outcome: ${outcome}.`
+        const ctx   = /** @type {Record<string, unknown>} */ (contract.intent?.context ?? {})
+        const resume = /** @type {Record<string, unknown>} */ (contract.resume          ?? {})
+        const arts  = /** @type {Record<string, unknown>} */ (contract.resume?.artifacts ?? contract.result?.artifacts ?? {})
+
+        const latencyMs = contract.status === 'complete' && contract.created_at
+            ? new Date(contract.updated_at).getTime() - new Date(contract.created_at).getTime()
+            : null
+
+        /** @param {Record<string, unknown>} obj */
+        const renderFields = (obj) =>
+            Object.entries(obj)
+                .filter(([, v]) => v != null && v !== '')
+                .map(([k, v]) => `  ${k}: ${v}`)
+                .join('\n')
+
+        const parts = [
+            `Contract: ${contract.type}  id: ${contract.id}`,
+            `Goal: ${contract.intent?.goal ?? 'unknown'}`,
+        ]
+
+        const ctxLines = renderFields(ctx)
+        if (ctxLines)  { parts.push('', 'Context:',    ctxLines) }
+
+        const resolveLines = renderFields({ ...resume, ...arts })
+        if (resolveLines) { parts.push('', 'Resolution:', resolveLines) }
+
+        const meta = []
+        if (latencyMs != null) meta.push(`latency: ${Math.round(latencyMs / 60_000)}m`)
+        const clarisCount = Array.isArray(contract.clarifications) ? contract.clarifications.length : 0
+        if (clarisCount)   meta.push(`clarifications: ${clarisCount}`)
+        if (meta.length)   parts.push('', meta.join('  '))
+
+        return parts.join('\n')
+    }
+
+    /**
+     * Promotes short scalar context fields to Engram tags generically.
+     * Any field whose serialized value fits in 64 chars becomes a tag.
+     * Long-form prose fields (message, description, etc.) are blocklisted.
+     *
+     * @param {BaseContract} contract
+     * @returns {string[]}
+     */
+    _buildTags(contract) {
+        const ctx    = /** @type {Record<string, unknown>} */ (contract.intent?.context ?? {})
+        const resume = /** @type {Record<string, unknown>} */ (contract.resume          ?? {})
+
+        const tags = ['aura-contract', `type:${contract.type}`, `id:${contract.id}`]
+
+        for (const [key, val] of Object.entries(ctx)) {
+            if (PROSE_FIELDS.has(key)) continue
+            const str = typeof val === 'string' || typeof val === 'number' ? String(val) : null
+            if (str && str.length <= 64) tags.push(`${key}:${str}`)
+        }
+
+        const action = typeof resume['action'] === 'string' ? resume['action'] : null
+        if (action) tags.push(`action:${action}`)
+
+        return tags
     }
 }

@@ -1,0 +1,53 @@
+# Aura OS — Artist Reseller Package Manifest
+# Version: 1.0
+
+identity:
+  name: Studio Ops
+  # email provisioned during Gmail connector setup (gog auth login)
+  email: null
+
+connectors:
+  # openclaw-channel connectors — OpenClaw manages auth
+  gmail:
+    source: openclaw-channel
+    required: true
+    setup_command: "openclaw webhooks gmail setup --account <your-agent-gmail>"
+    capability_without: Cannot monitor the inbox or reply to buyer messages.
+    capability_with: Can receive marketplace offer emails and send replies.
+
+  calendar:
+    source: openclaw-channel
+    required: false
+    capability_without: Cannot check the owner's schedule.
+    capability_with: Can read schedule and create deadline reminders.
+
+  drive:
+    source: openclaw-channel
+    required: false
+    capability_without: Cannot access project documents.
+    capability_with: Can read and write reports and listing drafts in Drive.
+
+  # aura-connector connectors — Aura holds the API key
+  etsy:
+    source: aura-connector
+    required: false
+    flow: manual-guide
+    capability_without: Cannot verify live Etsy listing prices.
+    capability_with: Can look up current asking price when an offer arrives.
+
+apps:
+  # aura-app entries added by agent at deploy time (Phase 5+)
+  # managed_by: 'pm2' | 'docker'  -- agent detects via `which pm2` / `docker info`
+  # See apps/posh-pusher/ for scaffold templates
+
+plugins:
+  # managed via aurora-registry.json — not duplicated here
+  registry: aurora-registry.json
+
+security:
+  # Phase 5: openclaw.json enforcement details
+  # See openclaw.json.template for the full policy structure
+  note: >
+    openclaw.json.template ships conservative defaults. Review before going
+    to production. Key levers: plugins.allow, tools.deny, exec.security,
+    hooks.allowedAgentIds.

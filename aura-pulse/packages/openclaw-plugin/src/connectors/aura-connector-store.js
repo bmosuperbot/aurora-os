@@ -90,6 +90,20 @@ export class AuraConnectorStore {
     }
 
     /**
+     * Seed a connector entry only if one with this id does not already exist.
+     * Never writes encrypted token fields — caller must use `write()` for credentials.
+     *
+     * @param {ConnectorState} state
+     * @returns {Promise<void>}
+     */
+    async seedIfAbsent(state) {
+        const existing = await this._storage.readConnector(state.id)
+        if (existing) return
+        const { oauth_token_enc: _t, refresh_token_enc: _r, ...safe } = state
+        await this._storage.writeConnector(safe)
+    }
+
+    /**
      * Update connector status fields without touching tokens.
      *
      * @param {string} id

@@ -13,6 +13,9 @@ export function normalizeConfig(raw) {
     const engramBridgeEnabled = typeof raw['engramBridgeEnabled'] === 'boolean' ? raw['engramBridgeEnabled'] : true
     const engramHttpUrl       = typeof raw['engramHttpUrl'] === 'string'       ? raw['engramHttpUrl']       : 'http://localhost:4318'
     const projectRootOverride = typeof raw['projectRootOverride'] === 'string' ? raw['projectRootOverride'] : null
+    const accountIds          = (typeof raw['accountIds'] === 'object' && raw['accountIds'] !== null && !Array.isArray(raw['accountIds']))
+        ? /** @type {Record<string, unknown>} */ (raw['accountIds'])
+        : {}
 
     return {
         auraRoot,
@@ -23,17 +26,19 @@ export function normalizeConfig(raw) {
         engramBridgeEnabled,
         engramHttpUrl,
         projectRootOverride,
+        accountIds,
     }
 }
 
 /**
  * @typedef {object} AuraPluginConfig
- * @property {string}      auraRoot
- * @property {string}      workspaceId
- * @property {number}      wsPort
- * @property {string|null} pulseStaticDir
- * @property {number}      signalDebounceMs
- * @property {boolean}     engramBridgeEnabled
- * @property {string}      engramHttpUrl
- * @property {string|null} projectRootOverride
+ * @property {string}                  auraRoot
+ * @property {string}                  workspaceId
+ * @property {number}                  wsPort
+ * @property {string|null}             pulseStaticDir
+ * @property {number}                  signalDebounceMs
+ * @property {boolean}                 engramBridgeEnabled
+ * @property {string}                  engramHttpUrl
+ * @property {string|null}             projectRootOverride
+ * @property {Record<string, unknown>} accountIds
  */

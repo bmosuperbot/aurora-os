@@ -7,6 +7,8 @@ export interface AuraPluginConfig {
     engramBridgeEnabled: boolean;
     engramHttpUrl: string;
     projectRootOverride: string | null;
+    /** Named account identifiers, keyed by service (e.g. { gmail: "studio-ops@gmail.com" }) */
+    accountIds: Record<string, unknown>;
 }
 
 export function normalizeConfig(raw: Record<string, unknown>): AuraPluginConfig;

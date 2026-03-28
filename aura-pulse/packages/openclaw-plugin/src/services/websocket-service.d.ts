@@ -2,6 +2,18 @@ import type { AuraPluginConfig } from '../config/schema.js';
 import type { ContractRuntime, ConnectorState, SQLiteContractStorage } from '@aura/contract-runtime';
 import type { PluginLogger } from '../types/plugin-types.js';
 
+export interface OnboardingStatusItem {
+    id: string;
+    label: string;
+    status: 'installed' | 'missing' | 'not-installed' | 'pending';
+    tier: 'required' | 'optional';
+}
+
+export interface OnboardingStatus {
+    items: OnboardingStatusItem[];
+    incomplete: boolean;
+}
+
 export interface ConnectorCardPayload {
     id: string;
     source: ConnectorState['source'];
@@ -26,10 +38,12 @@ export class WebSocketService {
         storage: SQLiteContractStorage,
         signalPath: string,
         logger: PluginLogger,
+        onboardingStatus?: OnboardingStatus | null,
     );
     start(): Promise<void>;
     stop(): Promise<void>;
     nudge(): void;
     pushConnectorRequest(connector: ConnectorCardPayload): void;
     pushConnectorComplete(connectorId: string, status: string): void;
+    broadcast(message: object): void;
 }

@@ -7,6 +7,7 @@ import { DecisionCard } from "./surface/DecisionCard/DecisionCard.js";
 import { ConfirmingCard } from "./surface/ConfirmingCard.js";
 import { CompletionCard } from "./surface/CompletionCard.js";
 import { ConnectorCardOverlay } from "./surface/ConnectorCard/ConnectorCard.js";
+import { OnboardingView } from "./surface/OnboardingView.js";
 import { HistoryOverlay } from "./history/HistoryOverlay.js";
 import { MorningBrief } from "./morning-brief/MorningBrief.js";
 import { getPluginWsUrl } from "./api/plugin-config.js";
@@ -23,12 +24,15 @@ export function App({ wsClient = pulseWSClient }: AppProps) {
     a2uiMessages,
     completionSurface,
     connectorCard,
+    onboardingOpen,
+    onboardingItems,
     historyOpen,
     handleMessage,
     setWsStatus,
     configureTransport,
     closeHistory,
     dismissCompletion,
+    dismissOnboarding,
   } = useSurfaceStore();
 
   // Wire WebSocket client once on mount
@@ -126,6 +130,9 @@ export function App({ wsClient = pulseWSClient }: AppProps) {
     <div className="app-root">
       {/* Primary surface */}
       {renderSurface()}
+
+      {/* Onboarding overlay — shown when registry is incomplete */}
+      {onboardingOpen && <OnboardingView items={onboardingItems} onDismiss={dismissOnboarding} />}
 
       {/* Connector card — full-screen overlay, always on top */}
       {connectorCard && <ConnectorCardOverlay card={connectorCard} />}

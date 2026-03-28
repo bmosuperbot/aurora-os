@@ -1,0 +1,29 @@
+{
+  "plugins": {
+    "allow": ["aura-pulse", "engram", "lobster", "browser"],
+    "load": {
+      "paths": ["~/.aura/packages/openclaw-plugin/index.js"]
+    },
+    "entries": {
+      "browser": { "enabled": true },
+      "engram":  { "enabled": true },
+      "lobster": { "enabled": true }
+    }
+  },
+
+  "hooks": {
+    "enabled": true,
+    "token": "${OPENCLAW_HOOK_TOKEN}",
+    "presets": ["gmail"]
+  },
+
+  "tools": {
+    "exec": {
+      "host": "gateway",
+      "security": "allowlist",
+      "ask": "on-miss",
+      "pathPrepend": ["/opt/homebrew/bin", "/usr/local/bin"]
+    },
+    "alsoAllow": ["lobster", "browser", "exec"]
+  }
+}
