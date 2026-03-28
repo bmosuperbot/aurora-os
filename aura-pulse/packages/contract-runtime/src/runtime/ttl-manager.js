@@ -21,11 +21,14 @@ export class TtlManager {
         this._runtime = runtime
         this._checkIntervalMs = config.checkIntervalMs ?? 30_000
         this._resolverTimeoutMs = config.resolverTimeoutMs ?? 300_000
+        this._completeRetentionDays = config.completeRetentionDays ?? 30
+        this._failedRetentionDays = config.failedRetentionDays ?? 7
         /** @type {ReturnType<typeof setInterval> | null} */
         this._timer = null
     }
 
     start() {
+        if (this._timer) return
         this._timer = setInterval(() => this.tick(), this._checkIntervalMs)
         this._timer.unref()
     }
@@ -56,5 +59,14 @@ export class TtlManager {
         for (const contract of timedOut) {
             await this._runtime.transition(contract.id, 'waiting_approval', SYSTEM_ACTOR)
         }
+
+        await this._cleanup()
+    }
+
+    async _cleanup() {
+        const now = Date.now()
+        const completeBefore = new Date(now - this._completeRetentionDays * 86_400_000).toISOString()
+        const failedBefore = new Date(now - this._failedRetentionDays * 86_400_000).toISOString()
+        await this._storage.purgeExpiredTerminalContracts(completeBefore, failedBefore)
     }
 }

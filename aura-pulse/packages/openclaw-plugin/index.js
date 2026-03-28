@@ -9,15 +9,17 @@ import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry'
 
 import { exec, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { homedir } from 'node:os'
 
 import { normalizeConfig }            from './src/config/schema.js'
+import { loadAuroraPackageJsonSync }  from './src/config/aurora-package.js'
 import { ContractRuntimeService }     from './src/services/contract-runtime-service.js'
 import { EngramCompletionBridge }     from './src/services/completion-bridge.js'
 import { WebSocketService }           from './src/services/websocket-service.js'
 import { FileBridgeWatcher }          from './src/services/file-bridge-watcher.js'
+import { ContractExecutor }           from './src/services/contract-executor.js'
+import { loadContributedTools }       from './src/services/tool-loader.js'
+import { ensureTriggers }             from './src/services/trigger-bootstrap.js'
+import { bootstrapRegistry, ensureOpenClawConfig } from './src/services/registry-bootstrap.js'
 import { registerStaticRoute, registerHistoryRoute } from './setup-entry.js'
 import { OpenClawChannelConnector }   from './src/connectors/openclaw-channel-connector.js'
 import { AuraConnectorStore }         from './src/connectors/aura-connector-store.js'
@@ -42,6 +44,17 @@ import { buildCli }                   from './src/cli/aura-cli.js'
 import { LockManager }               from './src/fs/locks.js'
 
 const AGENT_ID = 'aura-pulse'
+const PLUGIN_STATE_KEY = Symbol.for('aura-pulse.plugin-state')
+const DEFAULT_REGISTRY_MANIFEST = /** @type {RegistryManifest} */ ({
+    plugins: { required: [], optional: [] },
+    tools: [],
+    triggers: [],
+    openclawConfig: { plugins: { allow: ['aura-pulse'] } },
+})
+const DEFAULT_DOMAIN_TYPES_MANIFEST = /** @type {import('./src/domain-types/loader.js').DomainTypesManifest} */ ({
+    version: '1.0',
+    types: [],
+})
 
 const execAsync = promisify(exec)
 
@@ -92,85 +105,6 @@ function spawnCmd(bin, args) {
  */
 
 /**
- * Install any required registry plugins that are not yet loaded, then
- * restart the gateway if installs occurred.
- *
- * @param {import('./src/types/plugin-types.js').OpenClawPluginApi} api
- * @param {RegistryManifest} registry
- * @returns {Promise<boolean>} true if all required plugins are confirmed installed
- */
-async function bootstrapRegistry(api, registry) {
-    const { stdout, error } = await execCmd('openclaw plugins list --json')
-    if (error) {
-        api.logger.warn('[aura-registry] could not list plugins — skipping bootstrap')
-        return false
-    }
-
-    let loaded = /** @type {string[]} */ ([])
-    try {
-        loaded = JSON.parse(stdout).map((/** @type {{ id: string }} */ p) => p.id)
-    } catch {
-        api.logger.warn('[aura-registry] could not parse plugins list — skipping bootstrap')
-        return false
-    }
-
-    let needsRestart = false
-    for (const plugin of registry.plugins.required) {
-        if (!loaded.includes(plugin.id)) {
-            api.logger.info(`[aura-registry] installing ${plugin.package}@${plugin.version}`)
-            const result = await spawnCmd('openclaw', ['plugins', 'install', `${plugin.package}@${plugin.version}`])
-            if (result.error) {
-                api.logger.warn(`[aura-registry] install failed for ${plugin.id}: ${result.stderr}`)
-            } else {
-                needsRestart = true
-            }
-        }
-    }
-
-    if (needsRestart) {
-        api.logger.info('[aura-registry] restarting gateway after plugin installs')
-        await execCmd('openclaw gateway restart')
-    }
-
-    return true
-}
-
-/**
- * Write plugins.allow to openclaw.json on first run if absent.
- *
- * @param {import('./src/types/plugin-types.js').OpenClawPluginApi} api
- * @param {object} registry
- * @returns {Promise<void>}
- */
-async function ensureOpenClawConfig(api, /** @type {RegistryManifest} */ registry) {
-    const configPath = join(homedir(), '.openclaw', 'openclaw.json')
-    let current = /** @type {Record<string, unknown>} */ ({})
-    try {
-        current = JSON.parse(await readFile(configPath, 'utf8'))
-    } catch {
-        // File does not exist or is not valid JSON — start fresh
-    }
-
-    const plugins = /** @type {Record<string, unknown>} */ (
-        (typeof current['plugins'] === 'object' && current['plugins'] !== null)
-            ? current['plugins']
-            : {}
-    )
-
-    if (!plugins['allow']) {
-        plugins['allow'] = registry.openclawConfig.plugins.allow
-        if (!plugins['load']) plugins['load'] = registry.openclawConfig.plugins.load
-        current['plugins'] = plugins
-        try {
-            await writeFile(configPath, JSON.stringify(current, null, 2))
-            api.logger.info('[aura-registry] wrote plugins.allow to openclaw.json')
-        } catch (err) {
-            api.logger.warn(`[aura-registry] could not write openclaw.json: ${String(err)}`)
-        }
-    }
-}
-
-/**
  * Adapt the plugin's internal RegisteredTool shape to OpenClaw's AgentTool shape.
  * This keeps the tool implementations simple while satisfying the host SDK contract
  * with an explicit boundary adapter instead of a broad type cast.
@@ -208,6 +142,322 @@ function toAgentTool(tool, label) {
     }
 }
 
+/**
+ * @template {object} T
+ * @param {string} label
+ * @param {() => T} getTarget
+ * @returns {T}
+ */
+function createLazyProxy(label, getTarget) {
+    return /** @type {T} */ (new Proxy({}, {
+        get(_target, prop) {
+            if (prop === Symbol.toStringTag) {
+                return label
+            }
+
+            const target = getTarget()
+            const value = Reflect.get(target, prop, target)
+            return typeof value === 'function' ? value.bind(target) : value
+        },
+        set(_target, prop, value) {
+            const target = getTarget()
+            Reflect.set(target, prop, value, target)
+            return true
+        },
+        has(_target, prop) {
+            return prop in getTarget()
+        },
+        getOwnPropertyDescriptor() {
+            return {
+                configurable: true,
+                enumerable: true,
+            }
+        },
+    }))
+}
+
+function getGlobalPluginState() {
+    const globalState = /** @type {Record<PropertyKey, unknown>} */ (globalThis)
+    if (!globalState[PLUGIN_STATE_KEY]) {
+        globalState[PLUGIN_STATE_KEY] = {
+            fullRegistered: false,
+            manager: null,
+        }
+    }
+
+    return /** @type {{ fullRegistered: boolean, manager: ReturnType<typeof createPluginManager> | null }} */ (globalState[PLUGIN_STATE_KEY])
+}
+
+/**
+ * @param {import('./src/config/schema.js').AuraPluginConfig} config
+ */
+function createPluginManager(config, registryManifest, domainTypesManifest) {
+    return {
+        /** @type {import('./src/types/plugin-types.js').OpenClawPluginApi | null} */
+        _api: null,
+        /** @type {ContractRuntimeService | null} */
+        _runtimeService: null,
+        /** @type {WebSocketService | null} */
+        _wsService: null,
+        /** @type {FileBridgeWatcher | null} */
+        _fileBridgeWatcher: null,
+        /** @type {Promise<void> | null} */
+        _startPromise: null,
+        /** @type {Promise<void> | null} */
+        _stopPromise: null,
+        /** @type {boolean} */
+        _bootstrapDone: false,
+        /** @type {boolean} */
+        _triggerSetupDone: false,
+        /** @type {boolean} */
+        _contributedToolsRegistered: false,
+
+        /**
+         * @param {import('./src/types/plugin-types.js').OpenClawPluginApi} api
+         */
+        bindApi(api) {
+            this._api = api
+        },
+
+        getRuntime() {
+            if (!this._runtimeService) {
+                throw new Error('Aura Pulse runtime is not started')
+            }
+            return this._runtimeService.getRuntime()
+        },
+
+        getStorage() {
+            if (!this._runtimeService) {
+                throw new Error('Aura Pulse storage is not started')
+            }
+            return this._runtimeService.getStorage()
+        },
+
+        getPaths() {
+            if (!this._runtimeService) {
+                throw new Error('Aura Pulse paths are not available before startup')
+            }
+            return this._runtimeService.getPaths()
+        },
+
+        getWebSocketService() {
+            if (!this._wsService) {
+                throw new Error('Aura Pulse websocket service is not started')
+            }
+            return this._wsService
+        },
+
+        async ensureStarted() {
+            if (this._startPromise) {
+                await this._startPromise
+                return
+            }
+            if (this._runtimeService && this._wsService) {
+                return
+            }
+
+            const api = this._api
+            if (!api) {
+                throw new Error('Aura Pulse plugin manager is not bound to an OpenClaw API context')
+            }
+
+            this._startPromise = (async () => {
+                try {
+                    const bridge = new EngramCompletionBridge(config, api.logger)
+                    const runtimeService = new ContractRuntimeService(config, bridge)
+                    await runtimeService.start()
+                    this._runtimeService = runtimeService
+
+                    const runtime = runtimeService.getRuntime()
+                    const storage = runtimeService.getStorage()
+                    const paths = runtimeService.getPaths()
+                    const executor = new ContractExecutor({ api, auraRoot: config.auraRoot, storage, logger: api.logger })
+                    runtimeService.setExecutionNotifier(executor)
+
+                    for (const def of buildDomainTypeDefinitions(domainTypesManifest)) {
+                        if (runtime.hasType(def.type)) {
+                            api.logger.debug?.(`[domain-types] skipped already-registered type: ${def.type}`)
+                            continue
+                        }
+                        runtime.registerType(def)
+                        api.logger.debug?.(`[domain-types] registered: ${def.type}`)
+                    }
+
+                    const channelConnector = new OpenClawChannelConnector(storage, api.logger)
+                    const auraStore = new AuraConnectorStore(storage, api.logger)
+
+                    await channelConnector.seedIfAbsent('gmail',
+                        'Cannot monitor the business inbox or reply to buyer messages.',
+                        'Can receive offer emails and send replies on behalf of the business.')
+
+                    await channelConnector.seedIfAbsent('calendar',
+                        'Cannot check the owner\'s schedule for deadlines.',
+                        'Can read your schedule and create reminders for listing and shipping deadlines.')
+
+                    await channelConnector.seedIfAbsent('drive',
+                        'Cannot access project documents and reports.',
+                        'Can read and write project documents and reports in Google Drive.')
+
+                    const hooksConfig = /** @type {Record<string, unknown> | undefined} */ (
+                        typeof api.config['hooks'] === 'object' && api.config['hooks'] !== null
+                            ? api.config['hooks']
+                            : undefined
+                    )
+                    const gmailHookConfig = hooksConfig && typeof hooksConfig['gmail'] === 'object' && hooksConfig['gmail'] !== null
+                        ? /** @type {Record<string, unknown>} */ (hooksConfig['gmail'])
+                        : null
+                    const gmailConfigured = Boolean(gmailHookConfig?.['account'])
+
+                    if (gmailConfigured) {
+                        const existing = await storage.readConnector('gmail')
+                        if (existing) {
+                            await storage.writeConnector({
+                                ...existing,
+                                status: 'active',
+                                connected_at: existing.connected_at ?? new Date().toISOString(),
+                                updated_at: new Date().toISOString(),
+                            })
+                        }
+                    }
+
+                    await auraStore.seedIfAbsent({
+                        id: 'etsy',
+                        source: 'aura-connector',
+                        status: 'not-offered',
+                        capability_without: 'Cannot verify current Etsy listing prices when an offer arrives.',
+                        capability_with: 'Can look up live asking price for any Etsy listing.',
+                        updated_at: new Date().toISOString(),
+                    })
+
+                    let registryStatus = /** @type {import('./src/services/websocket-service.js').OnboardingStatus | null} */ (null)
+                    try {
+                        const { stdout } = await execCmd('openclaw plugins list --json')
+                        let loadedIds = /** @type {string[]} */ ([])
+                        try {
+                            loadedIds = JSON.parse(stdout).map((/** @type {{ id: string }} */ plugin) => plugin.id)
+                        } catch {
+                            loadedIds = []
+                        }
+
+                        const items = [
+                            ...registryManifest.plugins.required.map((plugin) => ({
+                                id: plugin.id,
+                                label: plugin.description,
+                                status: loadedIds.includes(plugin.id) ? /** @type {const} */ ('installed') : /** @type {const} */ ('missing'),
+                                tier: /** @type {const} */ ('required'),
+                            })),
+                            ...registryManifest.plugins.optional.map((plugin) => ({
+                                id: plugin.id,
+                                label: plugin.description,
+                                status: loadedIds.includes(plugin.id) ? /** @type {const} */ ('installed') : /** @type {const} */ ('not-installed'),
+                                tier: /** @type {const} */ ('optional'),
+                            })),
+                            {
+                                id: 'gmail',
+                                label: 'Gmail inbox',
+                                status: gmailConfigured ? /** @type {const} */ ('installed') : /** @type {const} */ ('pending'),
+                                tier: /** @type {const} */ ('required'),
+                            },
+                        ]
+
+                        registryStatus = {
+                            items,
+                            incomplete: items.some((item) => item.tier === 'required' && item.status !== 'installed'),
+                        }
+                    } catch {
+                        registryStatus = null
+                    }
+
+                    const wsService = new WebSocketService(config, runtime, storage, paths.signalPath, api.logger, registryStatus, executor)
+                    await wsService.start()
+                    this._wsService = wsService
+
+                    if (!gmailConfigured) {
+                        const existing = await storage.readConnector('gmail')
+                        if (existing) {
+                            wsService.pushConnectorRequest({
+                                id:                 existing.id,
+                                connector_id:       'gmail',
+                                connector_name:     'Gmail',
+                                offer_text:         'Connect Gmail so the agent can monitor the business inbox and reply to buyer messages.',
+                                source:             'openclaw-channel',
+                                status:             'not-offered',
+                                capability_without: existing.capability_without,
+                                capability_with:    existing.capability_with,
+                                flow_type:          'manual_guide',
+                                guide_steps: [
+                                    'Install gog: brew install gogcli',
+                                    'Authorize your agent Gmail account: gog auth login --account studio-ops@gmail.com',
+                                    'Run the Gmail wizard: openclaw webhooks gmail setup --account studio-ops@gmail.com',
+                                    'Restart the gateway: openclaw gateway restart',
+                                ],
+                            })
+                        }
+                    }
+
+                    const fileBridgeWatcher = new FileBridgeWatcher(
+                        paths.projectsDir,
+                        storage,
+                        api.logger,
+                        () => wsService.nudge(),
+                    )
+                    fileBridgeWatcher.start()
+                    this._fileBridgeWatcher = fileBridgeWatcher
+
+                    if (!this._bootstrapDone) {
+                        await bootstrapRegistry(api, registryManifest, config, execCmd, spawnCmd)
+                        await ensureOpenClawConfig(api, registryManifest, config)
+                        this._bootstrapDone = true
+                    }
+
+                    if (!this._triggerSetupDone) {
+                        await ensureTriggers(registryManifest, api, config)
+                        this._triggerSetupDone = true
+                    }
+
+                    if (!this._contributedToolsRegistered) {
+                        await loadContributedTools(registryManifest, config.auraRoot, storage, api.logger, (tool) => {
+                            api.registerTool(toAgentTool(tool, tool.name))
+                        })
+                        this._contributedToolsRegistered = true
+                    }
+                } catch (err) {
+                    await this.stop().catch(() => undefined)
+                    throw err
+                }
+            })()
+
+            try {
+                await this._startPromise
+            } finally {
+                this._startPromise = null
+            }
+        },
+
+        async stop() {
+            if (this._stopPromise) {
+                await this._stopPromise
+                return
+            }
+
+            this._stopPromise = (async () => {
+                await this._fileBridgeWatcher?.stop().catch(() => undefined)
+                this._fileBridgeWatcher = null
+                await this._wsService?.stop().catch(() => undefined)
+                this._wsService = null
+                await this._runtimeService?.stop().catch(() => undefined)
+                this._runtimeService = null
+            })()
+
+            try {
+                await this._stopPromise
+            } finally {
+                this._stopPromise = null
+            }
+        },
+    }
+}
+
 export default definePluginEntry({
     id: 'aura-pulse',
     name: 'Aura Pulse',
@@ -216,194 +466,80 @@ export default definePluginEntry({
     /**
         * @param {import('./src/types/plugin-types.js').OpenClawPluginApi} api
      */
-    async register(api) {
-        const raw    = api.pluginConfig ?? {}
+    register(api) {
+        if (api.registrationMode !== 'full') {
+            api.logger.debug?.(`[aura-pulse] skipping registration for mode=${api.registrationMode}`)
+            return
+        }
+
+        const state = getGlobalPluginState()
+        if (state.fullRegistered) {
+            api.logger.debug?.('[aura-pulse] full registration already completed for this process')
+            return
+        }
+
+        const raw = api.pluginConfig ?? {}
         const config = normalizeConfig(raw)
-
-        const bridge         = new EngramCompletionBridge(config, api.logger)
-        const runtimeService = new ContractRuntimeService(config, bridge)
-
-        // Start eagerly so tools can be bound to the live runtime synchronously.
-        // Services are also registered below so OpenClaw manages stop() on shutdown.
-        await runtimeService.start()
-        const runtime = runtimeService.getRuntime()
-        const storage = runtimeService.getStorage()
-        const paths   = runtimeService.getPaths()
-        const locks   = new LockManager(storage, api.logger)
-
-        // --- Load package-supplied domain types (artist-reseller/domain-types.json) ---
-        // Adding a new contract type requires only a JSON data change — no code update.
-        try {
-            const { default: domainTypesManifest } = await import('../artist-reseller/domain-types.json', { with: { type: 'json' } })
-            for (const def of buildDomainTypeDefinitions(/** @type {import('./src/domain-types/loader.js').DomainTypesManifest} */ (domainTypesManifest))) {
-                runtime.registerType(def)
-                api.logger.debug?.(`[domain-types] registered: ${def.type}`)
-            }
-        } catch (err) {
-            api.logger.warn(`[domain-types] failed to load artist-reseller/domain-types.json: ${String(err)}`)
-        }
-
-        // --- Connector seeding (openclaw-channel) ---
-        const channelConnector = new OpenClawChannelConnector(storage, api.logger)
-        const auraStore        = new AuraConnectorStore(storage, api.logger)
-
-        await channelConnector.seedIfAbsent('gmail',
-            'Cannot monitor the business inbox or reply to buyer messages.',
-            'Can receive offer emails and send replies on behalf of the business.')
-
-        await channelConnector.seedIfAbsent('calendar',
-            'Cannot check the owner\'s schedule for deadlines.',
-            'Can read your schedule and create reminders for listing and shipping deadlines.')
-
-        await channelConnector.seedIfAbsent('drive',
-            'Cannot access project documents and reports.',
-            'Can read and write project documents and reports in Google Drive.')
-
-        // Reflect actual Gmail hook state — mark active if hooks.gmail is configured
-        const hooksConfig = /** @type {Record<string, unknown> | undefined} */ (
-            typeof api.config['hooks'] === 'object' && api.config['hooks'] !== null
-                ? api.config['hooks']
-                : undefined
-        )
-        const gmailHookConfig = hooksConfig && typeof hooksConfig['gmail'] === 'object' && hooksConfig['gmail'] !== null
-            ? /** @type {Record<string, unknown>} */ (hooksConfig['gmail'])
-            : null
-        const gmailConfigured = Boolean(gmailHookConfig?.['account'])
-
-        if (gmailConfigured) {
-            const existing = await storage.readConnector('gmail')
-            if (existing) {
-                await storage.writeConnector({
-                    ...existing,
-                    status: 'active',
-                    connected_at: existing.connected_at ?? new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                })
-            }
-        }
-
-        // --- Connector seeding (aura-connector) ---
-        await auraStore.seedIfAbsent({
-            id: 'etsy',
-            source: 'aura-connector',
-            status: 'not-offered',
-            capability_without: 'Cannot verify current Etsy listing prices when an offer arrives.',
-            capability_with: 'Can look up live asking price for any Etsy listing.',
-            updated_at: new Date().toISOString(),
-        })
-
-        // --- Registry bootstrap (required plugins + plugins.allow) ---
-        let registryStatus = /** @type {import('./src/services/websocket-service.js').OnboardingStatus | null} */ (null)
-        try {
-            const registryMod = await import('../artist-reseller/aurora-registry.json', { with: { type: 'json' } })
-            const registry = /** @type {RegistryManifest} */ (registryMod.default)
-            await bootstrapRegistry(api, registry)
-            await ensureOpenClawConfig(api, registry)
-
-            // Build onboarding status for Pulse
-            const { stdout } = await execCmd('openclaw plugins list --json')
-            let loadedIds = /** @type {string[]} */ ([])
-            try { loadedIds = JSON.parse(stdout).map((/** @type {{ id: string }} */ p) => p.id) } catch { /* ignore */ }
-
-            const items = [
-                ...registry.plugins.required.map((/** @type {{ id: string, description: string }} */ p) => ({
-                    id: p.id,
-                    label: p.description,
-                    status: loadedIds.includes(p.id) ? /** @type {const} */ ('installed') : /** @type {const} */ ('missing'),
-                    tier: /** @type {const} */ ('required'),
-                })),
-                ...registry.plugins.optional.map((/** @type {{ id: string, description: string }} */ p) => ({
-                    id: p.id,
-                    label: p.description,
-                    status: loadedIds.includes(p.id) ? /** @type {const} */ ('installed') : /** @type {const} */ ('not-installed'),
-                    tier: /** @type {const} */ ('optional'),
-                })),
-                {
-                    id: 'gmail',
-                    label: 'Gmail inbox',
-                    status: gmailConfigured ? /** @type {const} */ ('installed') : /** @type {const} */ ('pending'),
-                    tier: /** @type {const} */ ('required'),
-                },
-            ]
-
-            const incomplete = items.some(i => i.tier === 'required' && i.status !== 'installed')
-            registryStatus = { items, incomplete }
-        } catch (err) {
-            api.logger.warn(`[aura-registry] bootstrap error: ${String(err)}`)
-        }
-
-        const wsService = new WebSocketService(config, runtime, storage, paths.signalPath, api.logger, registryStatus)
-        await wsService.start()
-
-        // First-run Gmail card push if wizard has not been run
-        if (!gmailConfigured) {
-            const existing = await storage.readConnector('gmail')
-            if (existing) {
-                wsService.pushConnectorRequest({
-                    id:                 existing.id,
-                    connector_id:       'gmail',
-                    connector_name:     'Gmail',
-                    offer_text:         'Connect Gmail so the agent can monitor the business inbox and reply to buyer messages.',
-                    source:             'openclaw-channel',
-                    status:             'not-offered',
-                    capability_without: existing.capability_without,
-                    capability_with:    existing.capability_with,
-                    flow_type:          'manual_guide',
-                    guide_steps: [
-                        'Install gog: brew install gogcli',
-                        'Authorize your agent Gmail account: gog auth login --account studio-ops@gmail.com',
-                        'Run the Gmail wizard: openclaw webhooks gmail setup --account studio-ops@gmail.com',
-                        'Restart the gateway: openclaw gateway restart',
-                    ],
-                })
-            }
-        }
-
-        const fileBridgeWatcher = new FileBridgeWatcher(
-            paths.projectsDir,
-            storage,
+        const registryManifest = loadAuroraPackageJsonSync(
+            config.auraRoot,
+            'artist-reseller',
+            'aurora-registry.json',
+            DEFAULT_REGISTRY_MANIFEST,
             api.logger,
-            () => wsService.nudge(),
         )
-        fileBridgeWatcher.start()
+        const domainTypesManifest = loadAuroraPackageJsonSync(
+            config.auraRoot,
+            'artist-reseller',
+            'domain-types.json',
+            DEFAULT_DOMAIN_TYPES_MANIFEST,
+            api.logger,
+        )
+        const defaultCompleteRequiresByType = Object.fromEntries(
+            (domainTypesManifest?.types ?? []).map((entry) => [
+                entry.type,
+                Array.isArray(entry.default_complete_requires) ? entry.default_complete_requires : [],
+            ]),
+        )
 
-        // --- Lifecycle registration (start is no-op — already started above) ---
+        const manager = state.manager ?? createPluginManager(config, registryManifest, domainTypesManifest)
+        manager.bindApi(api)
+        state.manager = manager
+        state.fullRegistered = true
+
+        const runtime = createLazyProxy('ContractRuntime', () => manager.getRuntime())
+        const storage = createLazyProxy('SQLiteContractStorage', () => manager.getStorage())
+        const paths = createLazyProxy('AuraPaths', () => manager.getPaths())
+        const wsService = {
+            pushConnectorRequest(payload) {
+                manager.getWebSocketService().pushConnectorRequest(payload)
+            },
+            pushConnectorComplete(connectorId, status) {
+                manager.getWebSocketService().pushConnectorComplete(connectorId, status)
+            },
+            nudge() {
+                manager.getWebSocketService().nudge()
+            },
+        }
+        const locks = new LockManager(storage, api.logger)
+
         api.registerService({
-            id: 'aura-runtime',
-            start: async (
-                /** @type {import('./src/types/plugin-types.js').OpenClawPluginServiceContext} */ _ctx,
-            ) => { /* started eagerly in register() */ },
-            stop:  async (
-                /** @type {import('./src/types/plugin-types.js').OpenClawPluginServiceContext} */ _ctx,
-            ) => runtimeService.stop(),
-        })
-        api.registerService({
-            id: 'aura-websocket',
-            start: async (
-                /** @type {import('./src/types/plugin-types.js').OpenClawPluginServiceContext} */ _ctx,
-            ) => { /* started eagerly in register() */ },
-            stop:  async (
-                /** @type {import('./src/types/plugin-types.js').OpenClawPluginServiceContext} */ _ctx,
-            ) => wsService.stop(),
-        })
-        api.registerService({
-            id: 'aura-file-bridge-watcher',
-            start: async (
-                /** @type {import('./src/types/plugin-types.js').OpenClawPluginServiceContext} */ _ctx,
-            ) => { /* started eagerly in register() */ },
-            stop:  async (
-                /** @type {import('./src/types/plugin-types.js').OpenClawPluginServiceContext} */ _ctx,
-            ) => fileBridgeWatcher.stop(),
+            id: 'aura-runtime-stack',
+            start: async () => {
+                await manager.ensureStarted()
+            },
+            stop: async () => {
+                await manager.stop()
+            },
         })
 
         // --- Contract tools ---
-        api.registerTool(toAgentTool(buildSurfaceDecision(runtime), 'Surface Decision'))
+    api.registerTool(toAgentTool(buildSurfaceDecision(runtime, { defaultCompleteRequiresByType: defaultCompleteRequiresByType }), 'Surface Decision'))
         api.registerTool(toAgentTool(buildReportToPrimary(runtime), 'Report To Primary'))
         api.registerTool(toAgentTool(buildLogAction(runtime), 'Log Action'))
         api.registerTool(toAgentTool(buildQueryContracts(runtime), 'Query Contracts'))
         api.registerTool(toAgentTool(buildQueryConnections(storage), 'Query Connections'))
         api.registerTool(toAgentTool(buildRequestConnection(storage, wsService), 'Request Connection'))
-        api.registerTool(toAgentTool(buildCompleteContract(runtime), 'Complete Contract'))
+        api.registerTool(toAgentTool(buildCompleteContract(runtime, storage), 'Complete Contract'))
 
         // --- FS tools ---
         api.registerTool(toAgentTool(buildFsRead(paths, locks), 'FS Read'))
@@ -433,6 +569,9 @@ export default definePluginEntry({
                     const args = /** @type {string[]} */ (actionArgs)
                     await cli.execute(args)
                 })
+        }, {
+            commands: [cli.name],
+            descriptors: [{ name: cli.name, description: cli.description, hasSubcommands: true }],
         })
 
         // --- Static HTTP route (Pulse UI) ---

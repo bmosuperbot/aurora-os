@@ -1,5 +1,5 @@
 import type { AuraPluginConfig } from '../config/schema.js';
-import type { ContractRuntime, ConnectorState, SQLiteContractStorage } from '@aura/contract-runtime';
+import type { ContractRuntime, ConnectorState, ExecutionNotifier, SQLiteContractStorage } from '@aura/contract-runtime';
 import type { PluginLogger } from '../types/plugin-types.js';
 
 export interface OnboardingStatusItem {
@@ -39,6 +39,7 @@ export class WebSocketService {
         signalPath: string,
         logger: PluginLogger,
         onboardingStatus?: OnboardingStatus | null,
+        executor?: ExecutionNotifier | null,
     );
     start(): Promise<void>;
     stop(): Promise<void>;

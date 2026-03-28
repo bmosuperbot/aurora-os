@@ -14,6 +14,7 @@ export { EngramCompletionBridge } from './src/services/completion-bridge.js'
 export { SignalWatcher }          from './src/services/signal-watcher.js'
 export { ConnectorManager }       from './src/services/connector-manager.js'
 export { FileBridgeWatcher }      from './src/services/file-bridge-watcher.js'
+export { AuraConnectorStore }      from './src/connectors/aura-connector-store.js'
 
 export { jailPath, tryJailPath }  from './src/fs/path-jail.js'
 export { applyPatch, applyPatches } from './src/fs/patcher.js'

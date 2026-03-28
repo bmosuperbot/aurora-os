@@ -1,0 +1,11 @@
+{
+  "name": "posh-pusher",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "fastify": "^5.0.0"
+  }
+}

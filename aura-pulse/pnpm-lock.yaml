@@ -6,6 +6,16 @@ settings:
 
 importers:
 
+  packages/artist-reseller:
+    dependencies:
+      '@aura/aura-pulse':
+        specifier: workspace:*
+        version: link:../openclaw-plugin
+    devDependencies:
+      '@aura/contract-runtime':
+        specifier: workspace:*
+        version: link:../contract-runtime
+
   packages/contract-runtime:
     devDependencies:
       '@eslint/js':
@@ -32,6 +42,9 @@ importers:
 
   packages/openclaw-plugin:
     dependencies:
+      '@aura/contract-runtime':
+        specifier: workspace:*
+        version: link:../contract-runtime
       '@sinclair/typebox':
         specifier: ^0.34.0
         version: 0.34.48
@@ -48,9 +61,6 @@ importers:
         specifier: ^8.18.0
         version: 8.20.0
     devDependencies:
-      '@aura/contract-runtime':
-        specifier: workspace:*
-        version: link:../contract-runtime
       '@eslint/js':
         specifier: ^9.0.0
         version: 9.39.4

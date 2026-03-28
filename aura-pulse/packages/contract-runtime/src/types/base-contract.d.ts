@@ -66,6 +66,7 @@ export interface BaseContract {
     surface_after?: string;
     participants: ContractParticipants;
     intent: ContractIntent;
+    complete_requires?: string[];
     surface?: ContractSurface;
     clarifications?: ClarificationEntry[];
     resume?: ContractResume;

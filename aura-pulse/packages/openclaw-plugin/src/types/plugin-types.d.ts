@@ -18,6 +18,16 @@ export interface PluginRuntime {
         resolveAgentDir(...args: unknown[]): string;
         resolveAgentWorkspaceDir(...args: unknown[]): string;
     };
+    config?: {
+        loadConfig(): Promise<Record<string, unknown>>;
+    };
+    system?: {
+        enqueueSystemEvent(text: string, options: { sessionKey: string }): Promise<void>;
+        requestHeartbeatNow(options: { sessionKey: string; reason: string }): void;
+    };
+    subagent?: {
+        run(options: { sessionKey: string; prompt: string; deliver?: boolean }): Promise<unknown>;
+    };
 }
 
 export interface OpenClawConfig {

@@ -25,6 +25,7 @@ export { SQLiteContractStorage } from './storage/sqlite-storage.js'
 export { ContractRuntime } from './runtime/contract-runtime.js'
 export { TypeRegistry } from './runtime/type-registry.js'
 export { NoOpCompletionNotifier } from './runtime/completion-notifier.js'
+export { NoOpExecutionNotifier } from './runtime/execution-notifier.js'
 
 // Domain types
 export { offerReceivedType } from './domain-types/offer-received.js'

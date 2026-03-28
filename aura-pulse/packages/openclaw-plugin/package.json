@@ -1,5 +1,5 @@
 {
-    "name": "@aura/openclaw-plugin",
+    "name": "@aura/aura-pulse",
     "version": "0.1.0",
     "private": true,
     "type": "module",
@@ -9,6 +9,7 @@
     },
     "engines": { "node": ">=24.0.0" },
     "scripts": {
+        "build:standalone": "node ../../scripts/build-openclaw-standalone.mjs",
         "test":          "vitest run",
         "test:watch":    "vitest",
         "test:coverage": "vitest run --coverage",
@@ -18,13 +19,13 @@
         "lint:fix":      "eslint src tests index.js setup-entry.js api.js runtime-api.js --fix"
     },
     "dependencies": {
+        "@aura/contract-runtime": "workspace:*",
         "@sinclair/typebox": "^0.34.0",
         "chokidar": "^4.0.0",
         "diff-match-patch": "^1.0.5",
         "ws": "^8.18.0"
     },
     "devDependencies": {
-        "@aura/contract-runtime": "workspace:*",
         "@eslint/js": "^9.0.0",
         "@types/diff-match-patch": "^1.0.36",
         "@types/node": "^24.0.0",

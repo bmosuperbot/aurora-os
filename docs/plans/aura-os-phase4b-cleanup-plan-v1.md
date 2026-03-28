@@ -254,8 +254,8 @@ After Phase 4b:
 ### Step H — Confirm tests and typecheck
 
 ```bash
-pnpm --filter @aura/openclaw-plugin test
-pnpm --filter @aura/openclaw-plugin typecheck
+pnpm --filter @aura/aura-pulse test
+pnpm --filter @aura/aura-pulse typecheck
 ```
 
 Target: 85 passed (adjusted for removed Beat 6a), zero type errors.

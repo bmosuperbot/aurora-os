@@ -223,6 +223,7 @@ export class SQLiteContractStorage extends ContractStorage {
         if (filter.agent_id) { conditions.push('agent_id = @agent_id'); params.agent_id = filter.agent_id }
         if (filter.package)  { conditions.push('package = @package');   params.package = filter.package }
         if (filter.after)    { conditions.push('timestamp > @after');   params.after = filter.after }
+        if (filter.contract_id) { conditions.push('contract_id = @contract_id'); params.contract_id = filter.contract_id }
 
         const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
         const rows = this._db().prepare(`SELECT * FROM autonomous_log ${where} ORDER BY timestamp DESC`).all(/** @type {any} */ (params))
@@ -230,6 +231,54 @@ export class SQLiteContractStorage extends ContractStorage {
             .../** @type {any} */ (row),
             detail: /** @type {any} */ (row).detail ? JSON.parse(/** @type {any} */ (row).detail) : undefined,
         }))
+    }
+
+    /**
+     * @param {string} completeBefore
+     * @param {string} failedBefore
+     * @returns {Promise<number>}
+     */
+    async purgeExpiredTerminalContracts(completeBefore, failedBefore) {
+        const deleted = this._withImmediateTransaction((db) => {
+            db.prepare(`
+                DELETE FROM autonomous_log WHERE contract_id IS NOT NULL AND contract_id NOT IN (SELECT id FROM contracts)
+            `).run()
+            db.prepare(`
+                DELETE FROM contract_log WHERE contract_id NOT IN (SELECT id FROM contracts)
+            `).run()
+
+            db.prepare(`
+                DELETE FROM autonomous_log
+                WHERE contract_id IN (
+                    SELECT id FROM contracts
+                    WHERE (status = 'complete' AND updated_at < @completeBefore)
+                       OR (status = 'failed' AND updated_at < @failedBefore)
+                )
+            `).run({ completeBefore, failedBefore })
+
+            db.prepare(`
+                DELETE FROM contract_log
+                WHERE contract_id IN (
+                    SELECT id FROM contracts
+                    WHERE (status = 'complete' AND updated_at < @completeBefore)
+                       OR (status = 'failed' AND updated_at < @failedBefore)
+                )
+            `).run({ completeBefore, failedBefore })
+
+            const result = db.prepare(`
+                DELETE FROM contracts
+                WHERE (status = 'complete' AND updated_at < @completeBefore)
+                   OR (status = 'failed' AND updated_at < @failedBefore)
+            `).run({ completeBefore, failedBefore })
+
+            return result.changes
+        })
+
+        if (deleted > 0) {
+            this._touchSignalSync()
+        }
+
+        return Number(deleted)
     }
 
     // ─── Connectors ───────────────────────────────────────────────────

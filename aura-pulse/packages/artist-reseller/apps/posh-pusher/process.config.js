@@ -3,7 +3,7 @@
 module.exports = {
     apps: [{
         name:   'posh-pusher',
-        script: './backend/server.js',
+        script: './server.js',
         cwd:    __dirname,
         watch:  false,
         // env populated by agent from .env during deploy

@@ -16,5 +16,9 @@ export interface ConnectorState {
     oauth_token_enc?: string;
     refresh_token_enc?: string;
     expires_at?: string;
+    app_pid?: number | string;
+    app_health_url?: string;
+    app_start_cmd?: string;
+    app_restart_count?: number;
     updated_at: string;
 }

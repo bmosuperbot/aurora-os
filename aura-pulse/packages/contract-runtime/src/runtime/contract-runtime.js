@@ -4,6 +4,7 @@
  * @import { ParticipantRef } from '../types/participant.js'
  * @import { ContractStorage, ContractFilter, LogFilter } from '../storage/interface.js'
  * @import { CompletionNotifier } from './completion-notifier.js'
+ * @import { ExecutionNotifier } from './execution-notifier.js'
  * @import { ContractTypeDefinition } from './type-registry.js'
  * @import { AutonomousLogEntry } from '../types/autonomous-log.js'
  * @import { ContractRuntimeConfig } from './contract-runtime.js'
@@ -11,6 +12,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { NoOpCompletionNotifier } from './completion-notifier.js'
+import { NoOpExecutionNotifier } from './execution-notifier.js'
 import { TypeRegistry } from './type-registry.js'
 import { TtlManager } from './ttl-manager.js'
 import { assertRolePermitted, assertValidTransition, assertTransitionRole, resolveActorRole } from './state-machine.js'
@@ -22,10 +24,12 @@ export class ContractRuntime {
      * @param {ContractStorage} storage
      * @param {CompletionNotifier} [notifier]
      * @param {ContractRuntimeConfig} [config]
+     * @param {ExecutionNotifier} [executionNotifier]
      */
-    constructor(storage, notifier = new NoOpCompletionNotifier(), config = {}) {
+    constructor(storage, notifier = new NoOpCompletionNotifier(), config = {}, executionNotifier = new NoOpExecutionNotifier()) {
         this._storage = storage
         this._notifier = notifier
+        this._executionNotifier = executionNotifier
         this._typeRegistry = new TypeRegistry()
         this._ttlManager = new TtlManager(storage, this, config.ttl)
     }
@@ -47,6 +51,14 @@ export class ContractRuntime {
     /** @param {ContractTypeDefinition} definition */
     registerType(definition) {
         this._typeRegistry.register(definition)
+    }
+
+    /**
+     * @param {string} type
+     * @returns {boolean}
+     */
+    hasType(type) {
+        return this._typeRegistry.has(type)
     }
 
     // ─── Contract CRUD ────────────────────────────────────────────────
@@ -169,6 +181,8 @@ export class ContractRuntime {
             event: 'resumed',
             detail: { action, value },
         })
+
+        await this._executionNotifier.onExecuting(updated)
     }
 
     // ─── Clarification ────────────────────────────────────────────────

@@ -12,7 +12,16 @@ describe('normalizeConfig', () => {
         expect(cfg.engramHttpUrl).toBe('http://localhost:4318')
         expect(cfg.pulseStaticDir).toBeNull()
         expect(cfg.projectRootOverride).toBeNull()
+        expect(cfg.workspaceDir).toBeTruthy()
+        expect(cfg.bootstrapEnabled).toBe(false)
+        expect(cfg.openClawConfigPath).toBeNull()
         expect(cfg.accountIds).toEqual({})
+        expect(cfg.ttl).toEqual({
+            checkIntervalMs: 60000,
+            resolverTimeoutMs: 600000,
+            completeRetentionDays: 30,
+            failedRetentionDays: 7,
+        })
     })
 
     it('preserves explicit values over defaults', () => {
@@ -25,7 +34,14 @@ describe('normalizeConfig', () => {
             engramHttpUrl: 'http://engram:8080',
             pulseStaticDir: '/dist/pulse',
             projectRootOverride: '/projects',
+            workspaceDir: '/workspace',
             accountIds: { gmail: 'studio-ops@gmail.com' },
+            ttl: {
+                checkIntervalMs: 120000,
+                resolverTimeoutMs: 900000,
+                completeRetentionDays: 14,
+                failedRetentionDays: 3,
+            },
         })
         expect(cfg.auraRoot).toBe('/my/aura')
         expect(cfg.workspaceId).toBe('ws-42')
@@ -35,7 +51,16 @@ describe('normalizeConfig', () => {
         expect(cfg.engramHttpUrl).toBe('http://engram:8080')
         expect(cfg.pulseStaticDir).toBe('/dist/pulse')
         expect(cfg.projectRootOverride).toBe('/projects')
+        expect(cfg.workspaceDir).toBe('/workspace')
+        expect(cfg.bootstrapEnabled).toBe(false)
+        expect(cfg.openClawConfigPath).toBeNull()
         expect(cfg.accountIds).toEqual({ gmail: 'studio-ops@gmail.com' })
+        expect(cfg.ttl).toEqual({
+            checkIntervalMs: 120000,
+            resolverTimeoutMs: 900000,
+            completeRetentionDays: 14,
+            failedRetentionDays: 3,
+        })
     })
 
     it('fills in only missing fields when given partial config', () => {

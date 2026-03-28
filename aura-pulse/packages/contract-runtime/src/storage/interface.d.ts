@@ -17,6 +17,7 @@ export interface LogFilter {
     agent_id?: string;
     package?: string;
     after?: string;
+    contract_id?: string;
 }
 
 export interface ContractLogEntry {
@@ -47,6 +48,7 @@ export class ContractStorage {
     queryLog(contractId: string): Promise<ContractLogEntry[]>;
     writeAutonomousLog(entry: AutonomousLogEntry): Promise<void>;
     queryAutonomousLog(filter?: LogFilter): Promise<AutonomousLogEntry[]>;
+    purgeExpiredTerminalContracts(completeBefore: string, failedBefore: string): Promise<number>;
     writeConnector(state: ConnectorState): Promise<void>;
     readConnectors(): Promise<ConnectorState[]>;
     readConnector(id: string): Promise<ConnectorState | null>;

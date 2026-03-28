@@ -1,5 +1,7 @@
+import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 /**
  * @import { AuraPluginConfig } from './schema.js'
@@ -16,6 +18,30 @@ export function resolveAuraRoot(auraRoot) {
         return join(homedir(), auraRoot.slice(1))
     }
     return auraRoot
+}
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+
+/**
+ * Resolve an installed `.aurora` package directory. In the monorepo, packages
+ * live next to openclaw-plugin under `packages/`.
+ *
+ * @param {string} auraRoot
+ * @param {string} packageId
+ * @returns {string}
+ */
+export function resolveAuroraPackageDir(auraRoot, packageId) {
+    const installed = resolve(resolveAuraRoot(auraRoot), 'packages', packageId)
+    if (existsSync(installed)) {
+        return installed
+    }
+
+    const bundled = resolve(__dirname, '../../vendor', packageId)
+    if (existsSync(bundled)) {
+        return bundled
+    }
+
+    return resolve(__dirname, '../../..', packageId)
 }
 
 /**

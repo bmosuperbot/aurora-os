@@ -1,6 +1,7 @@
 import type { BaseContract } from '../types/base-contract.js';
 import type { ContractStorage, ContractFilter, ContractLogEntry } from '../storage/interface.js';
 import type { CompletionNotifier } from './completion-notifier.js';
+import type { ExecutionNotifier } from './execution-notifier.js';
 import type { ContractTypeDefinition } from './type-registry.js';
 import type { AutonomousLogEntry } from '../types/autonomous-log.js';
 import type { ContractStatusValue } from '../types/contract-status.js';
@@ -11,17 +12,21 @@ export interface ContractRuntimeConfig {
     ttl?: {
         checkIntervalMs?: number;
         resolverTimeoutMs?: number;
+        completeRetentionDays?: number;
+        failedRetentionDays?: number;
     };
 }
 
 export class ContractRuntime {
     _storage: ContractStorage;
     _notifier: CompletionNotifier;
+    _executionNotifier: ExecutionNotifier;
     _ttlManager: TtlManager;
-    constructor(storage: ContractStorage, notifier?: CompletionNotifier, config?: ContractRuntimeConfig);
+    constructor(storage: ContractStorage, notifier?: CompletionNotifier, config?: ContractRuntimeConfig, executionNotifier?: ExecutionNotifier);
     initialize(): Promise<void>;
     shutdown(): Promise<void>;
     registerType(definition: ContractTypeDefinition): void;
+    hasType(type: string): boolean;
     create(contract: BaseContract): Promise<void>;
     transition(id: string, to: ContractStatusValue, actor: ParticipantRef): Promise<void>;
     resume(id: string, token: string, resolver: ParticipantRef, action?: string, value?: unknown, artifacts?: Record<string, unknown>): Promise<void>;

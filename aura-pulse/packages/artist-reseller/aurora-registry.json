@@ -32,10 +32,42 @@
   "tools": [
     {
       "id": "etsy-lookup",
+      "packageId": "artist-reseller",
       "module": "./tools/etsy-lookup.js",
       "connector": "etsy",
       "description": "Fetch the current asking price for an Etsy listing. Requires the Etsy connector to be active.",
-      "contributes": ["aura_query_listing"]
+      "contributes": ["aura_query_listing"],
+      "requires_connector": true
+    },
+    {
+      "id": "poshmark-watcher",
+      "packageId": "artist-reseller",
+      "module": null,
+      "connector": "poshmark",
+      "description": "Poshmark offer watcher via Lobster browser automation. No REST API — agent scaffolds the posh-pusher app.",
+      "contributes": [],
+      "requires_connector": true,
+      "app_scaffold": "./apps/posh-pusher/"
+    }
+  ],
+  "triggers": [
+    {
+      "id": "gmail-offers",
+      "kind": "gmail-preset",
+      "preset": "gmail",
+      "instruction": "If the email is a marketplace offer (Poshmark, Mercari, eBay, Depop), call aura_surface_decision with type='offer-received'. Include: platform, listing title, offer amount, buyer username, gmail thread ID."
+    },
+    {
+      "id": "calendar-monitor",
+      "kind": "heartbeat",
+      "directive": "- Run: gog calendar list --account {{gmail_account}} --days 1 --tag \"[aura]\"\n  For each event returned that has no matching open contract (check via aura_query_contracts), call aura_surface_decision with the appropriate type."
+    },
+    {
+      "id": "morning-brief",
+      "kind": "cron",
+      "schedule": "0 7 * * *",
+      "message": "Execute the standing order: Morning Brief (Program: daily-brief).",
+      "instruction": "Generate the morning brief. Summarize pending owner decisions, autonomous actions taken overnight, and calendar items in the next 48 hours. Call aura_surface_decision with type='morning-brief'."
     }
   ],
   "openclawConfig": {

@@ -13,8 +13,14 @@ export function normalizeConfig(raw) {
     const engramBridgeEnabled = typeof raw['engramBridgeEnabled'] === 'boolean' ? raw['engramBridgeEnabled'] : true
     const engramHttpUrl       = typeof raw['engramHttpUrl'] === 'string'       ? raw['engramHttpUrl']       : 'http://localhost:4318'
     const projectRootOverride = typeof raw['projectRootOverride'] === 'string' ? raw['projectRootOverride'] : null
+    const workspaceDir        = typeof raw['workspaceDir'] === 'string'        ? raw['workspaceDir']        : (projectRootOverride ?? process.cwd())
+    const bootstrapEnabled    = typeof raw['bootstrapEnabled'] === 'boolean'   ? raw['bootstrapEnabled']    : false
+    const openClawConfigPath  = typeof raw['openClawConfigPath'] === 'string'  ? raw['openClawConfigPath']  : null
     const accountIds          = (typeof raw['accountIds'] === 'object' && raw['accountIds'] !== null && !Array.isArray(raw['accountIds']))
         ? /** @type {Record<string, unknown>} */ (raw['accountIds'])
+        : {}
+    const rawTtl             = (typeof raw['ttl'] === 'object' && raw['ttl'] !== null && !Array.isArray(raw['ttl']))
+        ? /** @type {Record<string, unknown>} */ (raw['ttl'])
         : {}
 
     return {
@@ -26,7 +32,16 @@ export function normalizeConfig(raw) {
         engramBridgeEnabled,
         engramHttpUrl,
         projectRootOverride,
+        workspaceDir,
+        bootstrapEnabled,
+        openClawConfigPath,
         accountIds,
+        ttl: {
+            checkIntervalMs: typeof rawTtl['checkIntervalMs'] === 'number' ? rawTtl['checkIntervalMs'] : 60_000,
+            resolverTimeoutMs: typeof rawTtl['resolverTimeoutMs'] === 'number' ? rawTtl['resolverTimeoutMs'] : 600_000,
+            completeRetentionDays: typeof rawTtl['completeRetentionDays'] === 'number' ? rawTtl['completeRetentionDays'] : 30,
+            failedRetentionDays: typeof rawTtl['failedRetentionDays'] === 'number' ? rawTtl['failedRetentionDays'] : 7,
+        },
     }
 }
 
@@ -40,5 +55,14 @@ export function normalizeConfig(raw) {
  * @property {boolean}                 engramBridgeEnabled
  * @property {string}                  engramHttpUrl
  * @property {string|null}             projectRootOverride
+ * @property {string}                  workspaceDir
+ * @property {boolean}                 bootstrapEnabled
+ * @property {string|null}             openClawConfigPath
  * @property {Record<string, unknown>} accountIds
+ * @property {{
+ *   checkIntervalMs: number,
+ *   resolverTimeoutMs: number,
+ *   completeRetentionDays: number,
+ *   failedRetentionDays: number,
+ * }} ttl
  */

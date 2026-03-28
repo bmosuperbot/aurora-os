@@ -1,0 +1,16 @@
+FROM node:24-bookworm-slim
+
+ENV CI=1 \
+    HOME=/tmp/openclaw-home \
+    OPENCLAW_HOME=/tmp/openclaw-home \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+
+WORKDIR /workspace
+
+RUN corepack enable && corepack prepare pnpm@9.15.5 --activate
+
+COPY . .
+
+RUN mkdir -p "$HOME" && pnpm install --no-frozen-lockfile
+
+CMD ["sh", "./scripts/run-phase5-tests.sh"]

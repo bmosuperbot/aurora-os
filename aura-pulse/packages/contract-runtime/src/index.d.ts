@@ -34,9 +34,11 @@ export { SQLiteContractStorage } from './storage/sqlite-storage.js';
 export type { ContractRuntimeConfig } from './runtime/contract-runtime.js';
 export type { ContractTypeDefinition } from './runtime/type-registry.js';
 export type { CompletionNotifier } from './runtime/completion-notifier.js';
+export type { ExecutionNotifier } from './runtime/execution-notifier.js';
 export { ContractRuntime } from './runtime/contract-runtime.js';
 export { TypeRegistry } from './runtime/type-registry.js';
 export { NoOpCompletionNotifier } from './runtime/completion-notifier.js';
+export { NoOpExecutionNotifier } from './runtime/execution-notifier.js';
 
 // Errors
 export {

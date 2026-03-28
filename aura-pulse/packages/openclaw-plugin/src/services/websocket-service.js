@@ -5,6 +5,7 @@ import { WebSocketServer } from 'ws'
  * @import { ContractRuntime, BaseContract } from '@aura/contract-runtime'
  * @import { PluginLogger } from '../types/plugin-types.js'
  * @import { SQLiteContractStorage } from '@aura/contract-runtime'
+ * @import { ExecutionNotifier } from '@aura/contract-runtime'
  */
 
 import { AuraConnectorStore } from '../connectors/aura-connector-store.js'
@@ -67,55 +68,115 @@ export class WebSocketService {
      * @param {string} signalPath
      * @param {PluginLogger} logger
      * @param {OnboardingStatus | null} [onboardingStatus]
+    * @param {ExecutionNotifier | null} [executor]
      */
-    constructor(config, runtime, storage, signalPath, logger, onboardingStatus = null) {
+    constructor(config, runtime, storage, signalPath, logger, onboardingStatus = null, executor = null) {
         /** @type {AuraPluginConfig} */ this._config = config
         /** @type {ContractRuntime} */ this._runtime = runtime
         /** @type {SQLiteContractStorage} */ this._storage = storage
         /** @type {string} */ this._signalPath = signalPath
         /** @type {PluginLogger} */ this._logger = logger
         /** @type {OnboardingStatus | null} */ this._onboardingStatus = onboardingStatus
+        /** @type {ExecutionNotifier | null} */ this._executor = executor
         /** @type {WebSocketServer | null} */ this._wss = null
         /** @type {SignalWatcher | null} */ this._watcher = null
         /** @type {ReturnType<typeof setInterval> | null} */ this._heartbeatTimer = null
         /** @type {Set<import('ws').WebSocket>} */ this._clients = new Set()
+        /** @type {Promise<void> | null} */ this._startPromise = null
+        /** @type {Promise<void> | null} */ this._stopPromise = null
     }
 
     async start() {
-        this._wss = new WebSocketServer({ port: this._config.wsPort })
-        this._logger.info(`aura-pulse ws: listening on port ${this._config.wsPort}`)
+        if (this._wss) {
+            return
+        }
+        if (this._startPromise) {
+            await this._startPromise
+            return
+        }
 
-        this._wss.on('connection', (ws) => this._onConnect(ws))
-        this._wss.on('error', (err) => this._logger.error(`aura-pulse ws error: ${String(err)}`))
+        this._startPromise = (async () => {
+            const wss = await new Promise((resolve, reject) => {
+                const server = new WebSocketServer({ port: this._config.wsPort })
 
-        this._watcher = new SignalWatcher(
-            this._signalPath,
-            this._runtime,
-            this._logger,
-            this._config.signalDebounceMs,
-            (contracts) => this._onContractsChanged(contracts),
-        )
-        this._watcher.start()
+                const onListening = () => {
+                    cleanup()
+                    resolve(server)
+                }
+                const onError = (err) => {
+                    cleanup()
+                    server.close()
+                    reject(err)
+                }
+                const cleanup = () => {
+                    server.off('listening', onListening)
+                    server.off('error', onError)
+                }
 
-        this._heartbeatTimer = setInterval(() => this._ping(), HEARTBEAT_INTERVAL_MS)
+                server.once('listening', onListening)
+                server.once('error', onError)
+            })
+
+            this._wss = /** @type {WebSocketServer} */ (wss)
+            this._logger.info(`aura-pulse ws: listening on port ${this._config.wsPort}`)
+
+            this._wss.on('connection', (ws) => this._onConnect(ws))
+            this._wss.on('error', (err) => this._logger.error(`aura-pulse ws error: ${String(err)}`))
+
+            this._watcher = new SignalWatcher(
+                this._signalPath,
+                this._runtime,
+                this._logger,
+                this._config.signalDebounceMs,
+                (contracts) => this._onContractsChanged(contracts),
+            )
+            this._watcher.start()
+
+            this._heartbeatTimer = setInterval(() => this._ping(), HEARTBEAT_INTERVAL_MS)
+        })()
+
+        try {
+            await this._startPromise
+        } finally {
+            this._startPromise = null
+        }
     }
 
     async stop() {
-        if (this._heartbeatTimer) {
-            clearInterval(this._heartbeatTimer)
-            this._heartbeatTimer = null
+        if (this._stopPromise) {
+            await this._stopPromise
+            return
         }
-        this._watcher?.stop()
-        this._watcher = null
-        await new Promise((resolve) => {
-            if (this._wss) {
-                this._wss.close(() => resolve(undefined))
-            } else {
-                resolve(undefined)
+        if (this._startPromise) {
+            await this._startPromise.catch(() => undefined)
+        }
+        if (!this._wss && !this._watcher && !this._heartbeatTimer) {
+            return
+        }
+
+        this._stopPromise = (async () => {
+            if (this._heartbeatTimer) {
+                clearInterval(this._heartbeatTimer)
+                this._heartbeatTimer = null
             }
-        })
-        this._wss = null
-        this._clients.clear()
+            this._watcher?.stop()
+            this._watcher = null
+            await new Promise((resolve) => {
+                if (this._wss) {
+                    this._wss.close(() => resolve(undefined))
+                } else {
+                    resolve(undefined)
+                }
+            })
+            this._wss = null
+            this._clients.clear()
+        })()
+
+        try {
+            await this._stopPromise
+        } finally {
+            this._stopPromise = null
+        }
     }
 
     /**
@@ -249,11 +310,14 @@ export class WebSocketService {
                     artifacts,
                 )
                 this._broadcast(buildClear(payload['contractId'], 'resolved'))
-                // TODO(phase-5): ContractExecutor.wake(payload['contractId'])
-                // The runtime has already transitioned to 'executing'.
-                // The executor reads resume.artifacts, substitutes execution_goal
-                // tokens from contract context, and invokes the agent with the
-                // package-supplied tools in scope.
+                if (this._executor) {
+                    const contract = await this._runtime.get(payload['contractId'])
+                    if (contract) {
+                        this._executor.onExecuting(contract).catch((err) => {
+                            this._logger.warn(`executor error: ${String(err)}`)
+                        })
+                    }
+                }
             }
             break
 

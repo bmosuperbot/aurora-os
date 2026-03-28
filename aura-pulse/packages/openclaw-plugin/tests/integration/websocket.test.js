@@ -88,6 +88,19 @@ function makeCfg(port) {
         auraRoot: '~/.aura',
         workspaceId: 'test',
         engramBridgeEnabled: false,
+        engramHttpUrl: 'http://localhost:4318',
+        pulseStaticDir: null,
+        projectRootOverride: null,
+        workspaceDir: process.cwd(),
+        bootstrapEnabled: false,
+        openClawConfigPath: null,
+        accountIds: {},
+        ttl: {
+            checkIntervalMs: 60000,
+            resolverTimeoutMs: 600000,
+            completeRetentionDays: 30,
+            failedRetentionDays: 7,
+        },
     }
 }
 

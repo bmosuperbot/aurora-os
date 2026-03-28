@@ -79,6 +79,13 @@ export class ContractStorage {
      */
     async queryAutonomousLog(filter) { throw new Error('not implemented') }
 
+    /**
+     * @param {string} completeBefore
+     * @param {string} failedBefore
+     * @returns {Promise<number>}
+     */
+    async purgeExpiredTerminalContracts(completeBefore, failedBefore) { throw new Error('not implemented') }
+
     // ─── Connectors ───────────────────────────────────────────────────
 
     /**

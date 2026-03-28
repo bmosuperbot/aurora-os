@@ -17,7 +17,7 @@
  * @import { PluginLogger } from '../../packages/openclaw-plugin/src/types/plugin-types.js'
  */
 
-import { AuraConnectorStore } from '../../packages/openclaw-plugin/src/connectors/aura-connector-store.js'
+import { AuraConnectorStore } from '@aura/aura-pulse/api.js'
 
 /**
  * @param {SQLiteContractStorage} storage

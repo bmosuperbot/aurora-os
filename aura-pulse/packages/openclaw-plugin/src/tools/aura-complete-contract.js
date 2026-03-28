@@ -2,6 +2,7 @@ import { Type } from '@sinclair/typebox'
 
 /**
  * @import { ContractRuntime } from '@aura/contract-runtime'
+ * @import { SQLiteContractStorage } from '@aura/contract-runtime'
  */
 
 /**
@@ -13,9 +14,10 @@ import { Type } from '@sinclair/typebox'
  * completion notifier (Engram bridge, etc.).
  *
  * @param {ContractRuntime} runtime
+ * @param {SQLiteContractStorage} storage
  * @returns {import('../types/plugin-types.js').RegisteredTool}
  */
-export function buildCompleteContract(runtime) {
+export function buildCompleteContract(runtime, storage) {
     return {
         name: 'aura_complete_contract',
         description:
@@ -28,6 +30,53 @@ export function buildCompleteContract(runtime) {
         }),
         async execute(_id, params) {
             const p = /** @type {{ contract_id: string, summary: string }} */ (params)
+            const contract = await runtime.get(p.contract_id)
+            if (!contract) {
+                return {
+                    content: [{
+                        type: 'text',
+                        text: JSON.stringify({ ok: false, error: 'contract_not_found', contract_id: p.contract_id }),
+                    }],
+                    isError: true,
+                }
+            }
+
+            const required = Array.isArray(contract.complete_requires) ? contract.complete_requires : []
+            if (required.length > 0) {
+                const log = await storage.queryAutonomousLog({ contract_id: p.contract_id })
+                const seen = new Set(log.map((entry) => entry.action))
+                const missing = required.filter((action) => !seen.has(action))
+                if (missing.length > 0) {
+                    return {
+                        content: [{
+                            type: 'text',
+                            text: JSON.stringify({
+                                ok: false,
+                                error: 'missing_required_actions',
+                                contract_id: p.contract_id,
+                                missing,
+                            }),
+                        }],
+                        isError: true,
+                    }
+                }
+            }
+
+            const artifacts = contract.result?.artifacts ?? contract.resume?.artifacts
+            const result = artifacts
+                ? { success: true, summary: p.summary, artifacts }
+                : { success: true, summary: p.summary }
+
+            await storage.write({
+                ...contract,
+                updated_at: new Date().toISOString(),
+                completion_surface: {
+                    voice_line: contract.completion_surface?.voice_line ?? '',
+                    summary: p.summary,
+                },
+                result,
+            })
+
             await runtime.transition(p.contract_id, 'complete', {
                 id:   'agent-primary',
                 type: 'agent',

@@ -39,6 +39,8 @@
  * @property {string}      type
  * @property {string}      [version]
  * @property {string}      [description]
+ * @property {string[]}    [default_complete_requires]
+ * @property {Record<string, string>} [execution_goal]
  * @property {FieldSpec[]} fields
  */
 

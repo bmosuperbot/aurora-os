@@ -12,7 +12,25 @@
             "signalDebounceMs":    { "type": "number",  "description": "Signal file debounce window in ms. Default: 75" },
             "engramBridgeEnabled": { "type": "boolean", "description": "Enable Engram completion bridge. Default: true" },
             "engramHttpUrl":       { "type": "string",  "description": "Engram HTTP base URL. Default: http://localhost:4318" },
-            "projectRootOverride": { "type": "string",  "description": "Optional explicit File Bridge project root override." }
+            "projectRootOverride": { "type": "string",  "description": "Optional explicit File Bridge project root override." },
+            "workspaceDir":        { "type": "string",  "description": "Workspace directory used for HEARTBEAT.md trigger bootstrap." },
+            "bootstrapEnabled":    { "type": "boolean", "description": "Enable openclaw.json writes, plugin installs, and trigger bootstrap. Default: false" },
+            "openClawConfigPath":  { "type": "string",  "description": "Optional explicit path to the target openclaw.json." },
+            "accountIds": {
+                "type": "object",
+                "description": "Named account identifiers keyed by service, for example { \"gmail\": \"studio-ops@gmail.com\" }."
+            },
+            "ttl": {
+                "type": "object",
+                "description": "TTL and retention settings for contracts.",
+                "properties": {
+                    "checkIntervalMs": { "type": "number", "description": "TTL poll interval in ms. Default: 60000" },
+                    "resolverTimeoutMs": { "type": "number", "description": "Resolver-active timeout in ms. Default: 600000" },
+                    "completeRetentionDays": { "type": "number", "description": "Retention window for complete contracts. Default: 30" },
+                    "failedRetentionDays": { "type": "number", "description": "Retention window for failed contracts. Default: 7" }
+                },
+                "additionalProperties": false
+            }
         },
         "additionalProperties": false
     }

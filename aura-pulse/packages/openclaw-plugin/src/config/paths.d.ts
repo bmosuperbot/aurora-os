@@ -17,4 +17,5 @@ export interface AuraPaths {
 }
 
 export function resolveAuraRoot(auraRoot: string): string;
+export function resolveAuroraPackageDir(auraRoot: string, packageId: string): string;
 export function resolvePaths(config: import('./schema.js').AuraPluginConfig): AuraPaths;

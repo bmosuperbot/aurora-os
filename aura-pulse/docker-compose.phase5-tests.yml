@@ -1,0 +1,10 @@
+services:
+  phase5-tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.phase5-tests
+    environment:
+      CI: "1"
+      HOME: /tmp/openclaw-home
+      OPENCLAW_HOME: /tmp/openclaw-home
+    working_dir: /workspace

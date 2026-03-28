@@ -12,8 +12,10 @@ import { randomUUID } from 'node:crypto'
  * @property {string} [summary]
  * @property {string} [voice_line]
  * @property {string} [expires_at]
+ * @property {number} [ttl_hours]
  * @property {string} [surface_after]
  * @property {string} [writer_id]
+ * @property {string[]} [complete_requires]
  */
 
 /**
@@ -21,9 +23,10 @@ import { randomUUID } from 'node:crypto'
  * Creates or updates a human-resolved contract and surfaces it for approval.
  *
  * @param {ContractRuntime} runtime
+ * @param {{ defaultCompleteRequiresByType?: Record<string, string[]> }} [options]
  * @returns {import('../types/plugin-types.js').RegisteredTool}
  */
-export function buildSurfaceDecision(runtime) {
+export function buildSurfaceDecision(runtime, options = {}) {
     return {
         name: 'aura_surface_decision',
         description: 'Surface a decision card to the owner for approval. Creates a waiting_approval contract and makes it visible in the Pulse UI. Use this when the agent reaches a decision point that requires human judgment.',
@@ -46,14 +49,23 @@ export function buildSurfaceDecision(runtime) {
             summary:     Type.Optional(Type.String({ description: 'Human-readable summary for the decision card' })),
             voice_line:  Type.Optional(Type.String({ description: 'Short voice line for the decision card' })),
             expires_at:  Type.Optional(Type.String({ description: 'ISO-8601 TTL for the decision' })),
+            ttl_hours:   Type.Optional(Type.Number({ description: 'TTL in hours when expires_at is omitted. Default: 24.' })),
             surface_after: Type.Optional(Type.String({ description: 'ISO-8601 timestamp — defer display until this time' })),
             writer_id:   Type.Optional(Type.String({ description: 'Agent ID creating this contract. Default: agent-primary' })),
+            complete_requires: Type.Optional(Type.Array(Type.String(), {
+                description: 'Logged action names that must appear before this contract can complete.',
+            })),
         }),
         async execute(_id, params) {
             const p          = /** @type {SurfaceDecisionParams} */ (params)
             const writerId   = p.writer_id ?? 'agent-primary'
             const contractId = randomUUID()
             const now        = new Date().toISOString()
+            const ttlHours   = typeof p.ttl_hours === 'number' ? p.ttl_hours : 24
+            const expiresAt  = p.expires_at ?? new Date(Date.now() + ttlHours * 60 * 60 * 1000).toISOString()
+            const completeRequires = Array.isArray(p.complete_requires)
+                ? p.complete_requires
+                : options.defaultCompleteRequiresByType?.[p.type]
             const normalizedActions = Array.isArray(p.actions)
                 ? p.actions.map((action, index) => ({
                     id: action.id,
@@ -81,8 +93,9 @@ export function buildSurfaceDecision(runtime) {
                     resolver: { id: 'owner', type: 'human' },
                 },
                 intent: { goal: p.goal, trigger: p.trigger, context: p.context ?? {} },
-                ...(p.expires_at    ? { expires_at: p.expires_at }       : {}),
+                expires_at: expiresAt,
                 ...(p.surface_after ? { surface_after: p.surface_after } : {}),
+                ...(Array.isArray(completeRequires) ? { complete_requires: completeRequires } : {}),
                 ...(p.summary       ? { surface: {
                     voice_line: p.voice_line ?? '',
                     summary: p.summary,
