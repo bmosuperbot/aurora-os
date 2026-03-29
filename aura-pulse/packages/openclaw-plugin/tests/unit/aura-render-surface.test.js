@@ -81,6 +81,20 @@ describe('buildRenderSurface', () => {
         expect(result.content[0].text).toContain('"status":"rendered"')
     })
 
+    it('rejects malformed stringified A2UI arrays', async () => {
+        const wsService = {
+            pushKernelSurface: vi.fn(),
+        }
+        const tool = buildRenderSurface(wsService)
+
+        await expect(tool.execute('call-1', {
+            surface_id: 'grant-radar-skill-test',
+            a2ui_messages: '[{"surfaceUpdate": {"surfaceId": "grant-radar-skill-test"}'
+        })).rejects.toThrow(/string must contain valid JSON/)
+
+        expect(wsService.pushKernelSurface).not.toHaveBeenCalled()
+    })
+
     it('rejects pseudo-A2UI wrapper payloads', async () => {
         const wsService = {
             pushKernelSurface: vi.fn(),

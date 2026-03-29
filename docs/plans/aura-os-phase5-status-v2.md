@@ -232,6 +232,22 @@ The stricter follow-up prompt explicitly told the agent to:
 
 Even with those instructions, the live session still emitted a string value for `a2ui_messages` and failed validation before Pulse could render the interface. That means prompt specificity alone has not resolved the canonical A2UI emission problem for the active model.
 
+Follow-up cleanup after that result:
+
+- the `aura_render_surface` tool contract was tightened so `a2ui_messages` is now array-only instead of array-or-string
+- the string fallback in the tool implementation was removed
+- the unit test that previously blessed stringified payloads was replaced with a rejection test
+- the live workspace skill and component reference were simplified for a small local model: contradictory `Text.value` examples were removed, fallback-only and wrapper-heavy examples were reduced, and the docs now repeat that the tool must receive a native array value rather than a quoted JSON blob
+
+Latest live retest after those cleanups:
+
+- the repo-owned runtime stayed healthy
+- the Pulse owner command again read the cleaned skill and component reference first
+- the model still emitted `a2ui_messages` as a quoted string for `surface_id` `sales-last-week-explicit-2`
+- the tool now rejects that immediately with the clearer error `a2ui_messages: must be array`
+
+That is an improvement in contract clarity, but not yet an improvement in model behavior.
+
 This is the current blocker.
 
 ---

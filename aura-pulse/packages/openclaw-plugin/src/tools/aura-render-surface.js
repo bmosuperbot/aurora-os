@@ -172,7 +172,7 @@ function normalizeA2UIMessages(rawMessages) {
     }
 
     if (typeof rawMessages !== 'string') {
-        throw new Error('aura_render_surface.a2ui_messages must be an array or a JSON array string.')
+        throw new Error('aura_render_surface.a2ui_messages must be array.')
     }
 
     let parsed
@@ -189,6 +189,7 @@ function normalizeA2UIMessages(rawMessages) {
     return /** @type {Record<string, unknown>[]} */ (parsed)
 }
 
+/**
 /**
  * @typedef {{
  *   pushKernelSurface(surface: {
@@ -239,7 +240,7 @@ function normalizeA2UIMessages(rawMessages) {
 export function buildRenderSurface(wsService) {
     return {
         name: 'aura_render_surface',
-        description: 'Render a general-purpose interface in Aura Pulse without creating a contract. Use this for informative or exploratory UI such as sales tables, dashboards, charts, drill-down lists, and agent-generated visual summaries. The a2ui_messages field must be canonical A2UI server-to-client messages for the same surface_id, using real protocol objects like { surfaceUpdate: { ... } }, { dataModelUpdate: { ... } }, and { beginRendering: { ... } }. Pass a2ui_messages as a real array value in tool arguments, for example [{ surfaceUpdate: { ... } }, { dataModelUpdate: { ... } }, { beginRendering: { ... } }]. Never pass it as a JSON string like "[{...}]". Do not use wrapper shapes like { type: "a2ui.surfaceUpdate", data: { ... } }. Do not use this tool for approvals, deterministic workflow steps, or anything that should be tracked as a contract.',
+        description: 'Render a general-purpose interface in Aura Pulse without creating a contract. Use this for informative or exploratory UI such as sales tables, dashboards, charts, drill-down lists, and agent-generated visual summaries. The a2ui_messages field must be canonical A2UI server-to-client messages for the same surface_id, using real protocol objects like { surfaceUpdate: { ... } }, { dataModelUpdate: { ... } }, and { beginRendering: { ... } }. Pass a2ui_messages only as a real array value in tool arguments, for example [{ surfaceUpdate: { ... } }, { dataModelUpdate: { ... } }, { beginRendering: { ... } }]. Do not quote the array. Do not pass a JSON string like "[{...}]". Do not use wrapper shapes like { type: "a2ui.surfaceUpdate", data: { ... } }. Do not use this tool for approvals, deterministic workflow steps, or anything that should be tracked as a contract.',
         parameters: Type.Object({
             surface_id: Type.String({ description: 'Stable A2UI surface id, e.g. sales-last-week or inbox-summary' }),
             title: Type.Optional(Type.String({ description: 'Short title shown above the rendered interface' })),
@@ -262,10 +263,14 @@ export function buildRenderSurface(wsService) {
             a2ui_messages: Type.Union([
                 Type.Array(
                     Type.Record(Type.String(), Type.Unknown()),
-                    { minItems: 1 },
+                    {
+                        minItems: 1,
+                    },
                 ),
                 Type.String({ minLength: 2 }),
-            ], { description: 'Canonical A2UI message objects for the same surface_id. Prefer an actual array value. If the model serializes the array as a JSON string, it will be parsed and still validated strictly. Use real protocol objects like { surfaceUpdate: { ... } }, { dataModelUpdate: { ... } }, and { beginRendering: { ... } }. Do not use type/data or a2uiType/data wrappers.' }),
+            ], {
+                description: 'Canonical A2UI message objects for the same surface_id. Pass a native array value. Each item must be a real protocol object like { surfaceUpdate: { ... } }, { dataModelUpdate: { ... } }, or { beginRendering: { ... } }. Do not quote the array. Do not use type/data or a2uiType/data wrappers.',
+            }),
         }),
         /**
          * @param {string} _id
