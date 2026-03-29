@@ -18,7 +18,7 @@ pnpm --filter @aura/aura-pulse demo:artist
 What that preflight confirms:
 
 - OpenClaw is healthy on `http://127.0.0.1:28789`
-- Aura is loading from `/workspaces/aura-pulse/dist/openclaw-plugin-standalone`
+- Aura is loading from `/home/node/.openclaw/workspace/openclaw-plugin-standalone`
 - the isolated runtime has the Gmail preset configured for `studio-ops@gmail.com`
 - the Aura connector table shows Gmail as `active`
 
@@ -30,15 +30,17 @@ If the preflight fails, do not continue to manual testing. Fix the runtime first
 
 The validated isolated runtime used in this repo lives at:
 
-- OpenClaw checkout: `~/Documents/openclaw-aura`
-- isolated config: `~/Documents/openclaw-aura-state/config/openclaw.json`
-- isolated workspace: `~/Documents/openclaw-aura-state/workspace`
+- repo-owned wrapper: `aura-pulse/docker-compose.openclaw.yml`
+- isolated config: `aura-pulse/.openclaw-docker/config/openclaw.json`
+- isolated workspace: `aura-pulse/.openclaw-docker/workspace`
 - gateway URL: `http://127.0.0.1:28789`
+- Pulse websocket: `ws://127.0.0.1:28790/aura/surface`
+- preferred local Pulse UI: `http://127.0.0.1:4175`
 
 The current plugin load path is:
 
 ```text
-/workspaces/aura-pulse/dist/openclaw-plugin-standalone
+/home/node/.openclaw/workspace/openclaw-plugin-standalone
 ```
 
 That is the path the next agent should assume unless it is explicitly changed.

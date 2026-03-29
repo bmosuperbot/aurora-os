@@ -18,6 +18,10 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.*.example
+
+# Repo-owned OpenClaw Docker runtime state
+aura-pulse/.openclaw-docker/
 
 # macOS
 .DS_Store

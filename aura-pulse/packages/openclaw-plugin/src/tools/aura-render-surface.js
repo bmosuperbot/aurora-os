@@ -40,7 +40,14 @@ function validateBuiltInComponent(index, componentIndex, component) {
         )
     }
 
-    const [componentType, props] = componentEntries[0]
+    const componentEntry = componentEntries[0]
+    if (!componentEntry) {
+        throw new Error(
+            `aura_render_surface.a2ui_messages[${index}].surfaceUpdate.components[${componentIndex}].component must contain exactly one component type.`
+        )
+    }
+
+    const [componentType, props] = componentEntry
     if (!isPlainObject(props)) {
         throw new Error(
             `aura_render_surface.a2ui_messages[${index}].surfaceUpdate.components[${componentIndex}].component.${componentType} must be an object.`
@@ -288,7 +295,7 @@ export function buildRenderSurface(wsService) {
                     text: JSON.stringify({
                         surfaceId: p.surface_id,
                         status: 'rendered',
-                        messageCount: p.a2ui_messages.length,
+                        messageCount: normalizedMessages.length,
                     }),
                 }],
             })

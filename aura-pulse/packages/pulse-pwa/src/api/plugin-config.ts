@@ -5,6 +5,7 @@ type AuraRuntimeConfig = typeof globalThis & {
 
 const DEFAULT_PLUGIN_URL = "http://localhost:7701";
 const DEFAULT_WS_URL = "ws://localhost:7700/aura/surface";
+const CONFIGURED_ENV_WS_URL = import.meta.env.VITE_WS_URL as string | undefined;
 
 function getRuntimeConfig(): AuraRuntimeConfig {
   return globalThis as AuraRuntimeConfig;
@@ -17,6 +18,7 @@ export function getPluginHttpUrl(): string {
 export function getPluginWsUrl(): string {
   const configuredWs = getRuntimeConfig().__AURA_WS_URL__;
   if (configuredWs) return configuredWs;
+  if (CONFIGURED_ENV_WS_URL) return CONFIGURED_ENV_WS_URL;
 
   const pluginUrl = getPluginHttpUrl();
   if (pluginUrl === DEFAULT_PLUGIN_URL) {

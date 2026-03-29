@@ -1,0 +1,49 @@
+services:
+  # Preferred dev mode:
+  # - keep OpenClaw in Docker
+  # - keep Aura Pulse on localhost during heavy UI development
+  # The aura-pulse-pwa service stays optional for later full-stack container testing.
+  openclaw-gateway:
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:2026.3.24}
+    init: true
+    working_dir: /app
+    environment:
+      HOME: /home/node
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      - ${AURA_REPO_DIR}:/workspaces/aurora-os:ro
+    ports:
+      - ${OPENCLAW_GATEWAY_PORT:-28789}:18789
+      - ${OPENCLAW_PULSE_WS_PORT:-28790}:7700
+
+  aura-pulse-pwa:
+    # Optional only. Prefer the local Pulse dev server while UI work is moving quickly.
+    build:
+      context: .
+      dockerfile: Dockerfile.pulse-pwa
+      args:
+        VITE_PLUGIN_URL: http://127.0.0.1:${OPENCLAW_GATEWAY_PORT:-28789}
+        VITE_WS_URL: ws://127.0.0.1:${OPENCLAW_PULSE_WS_PORT:-28790}/aura/surface
+    depends_on:
+      - openclaw-gateway
+    ports:
+      - ${OPENCLAW_PULSE_UI_PORT:-4175}:4175
+    profiles:
+      - pulse-ui
+
+  openclaw-cli:
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:2026.3.24}
+    working_dir: /app
+    network_mode: service:openclaw-gateway
+    depends_on:
+      - openclaw-gateway
+    entrypoint:
+      - node
+      - dist/index.js
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      - ${AURA_REPO_DIR}:/workspaces/aurora-os:ro
+    profiles:
+      - tools

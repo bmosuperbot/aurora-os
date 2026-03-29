@@ -2,9 +2,9 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "Pulse PWA demo dev server",
+			"label": "Pulse PWA local dev server",
 			"type": "shell",
-			"command": "VITE_PLUGIN_URL=http://127.0.0.1:8711 pnpm dev -- --host 127.0.0.1 --port 4173",
+			"command": "VITE_PLUGIN_URL=http://127.0.0.1:28789 VITE_WS_URL=ws://127.0.0.1:28790/aura/surface pnpm dev -- --host 127.0.0.1 --port 4175",
 			"isBackground": true,
 			"problemMatcher": [],
 			"group": "build"

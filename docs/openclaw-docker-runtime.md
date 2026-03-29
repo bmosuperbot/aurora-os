@@ -1,43 +1,53 @@
 # Supported OpenClaw Docker Runtime
 
-This project should use OpenClaw's supported Docker flow for any long-lived Aura integration testing.
+This project should use a repo-owned wrapper around OpenClaw's supported Docker flow for long-lived Aura integration testing.
 
 Use this runtime when you want:
 
 - a persistent OpenClaw gateway
 - one-time onboarding instead of redoing setup on every test run
 - isolation from the real `~/.openclaw` on the host machine
-- a path that matches upstream OpenClaw docs
+- a path that still matches upstream OpenClaw Docker conventions
+- no second checkout of the upstream OpenClaw repo just to run the gateway
+
+Preferred development mode for now:
+
+- keep OpenClaw in Docker
+- keep Aura Pulse on localhost during heavy UI development
+- use the Dockerized Pulse UI only for later end-to-end container validation
 
 Do not use the Phase 5 test container for this. That container is intentionally throwaway and exists only to run the Aura test suite in isolation.
 
 ## Runtime Shape
 
-The supported setup lives in a separate checkout of the upstream OpenClaw repo and persists state outside the container:
+The supported setup now lives in this repo under `aura-pulse/` and uses the published OpenClaw image plus the documented manual Docker flow:
+
+- compose file: `aura-pulse/docker-compose.openclaw.yml`
+- onboarding wrapper: `aura-pulse/scripts/openclaw-docker-onboard.sh`
+- startup wrapper: `aura-pulse/scripts/openclaw-docker-up.sh`
+
+It persists state outside the container with bind mounts:
 
 - `OPENCLAW_CONFIG_DIR` bind-mounts to `/home/node/.openclaw`
 - `OPENCLAW_WORKSPACE_DIR` bind-mounts to `/home/node/.openclaw/workspace`
-- `OPENCLAW_HOME_VOLUME` optionally persists the rest of `/home/node`
 
 That means onboarding only needs to happen once as long as those paths stay in place.
 
 ## Recommended Layout
 
-Use a dedicated OpenClaw checkout and dedicated Aura state paths so the runtime cannot touch the user's live OpenClaw install.
+Use dedicated Aura-owned state paths inside this repo so the runtime cannot touch the user's live OpenClaw install and does not depend on a second OpenClaw checkout.
 
 ```bash
-git clone https://github.com/openclaw/openclaw.git ~/openclaw-aura
-cd ~/openclaw-aura
+cd aura-pulse
 
-mkdir -p "$HOME/Documents/openclaw-aura-state/config"
-mkdir -p "$HOME/Documents/openclaw-aura-state/workspace"
+cp .env.openclaw.example .env.openclaw   # optional reference only
 
-export OPENCLAW_IMAGE="ghcr.io/openclaw/openclaw:latest"
-export OPENCLAW_CONFIG_DIR="$HOME/Documents/openclaw-aura-state/config"
-export OPENCLAW_WORKSPACE_DIR="$HOME/Documents/openclaw-aura-state/workspace"
-export OPENCLAW_HOME_VOLUME="openclaw_aura_home"
+export OPENCLAW_IMAGE="ghcr.io/openclaw/openclaw:2026.3.24"
+export OPENCLAW_CONFIG_DIR="$PWD/.openclaw-docker/config"
+export OPENCLAW_WORKSPACE_DIR="$PWD/.openclaw-docker/workspace"
 
-./scripts/docker/setup.sh
+sh ./scripts/openclaw-docker-onboard.sh
+sh ./scripts/openclaw-docker-up.sh
 ```
 
 OpenClaw's Docker guide is the source of truth:
@@ -79,16 +89,17 @@ Notes:
 
 ## One-Time Onboarding
 
-Either run interactive onboarding in the OpenClaw repo root:
+Run interactive onboarding through the repo-owned wrapper:
 
 ```bash
-./scripts/docker/setup.sh
+cd aura-pulse
+sh ./scripts/openclaw-docker-onboard.sh
 ```
 
-Or use OpenClaw's non-interactive Ollama onboarding if you want a scripted first boot:
+If you want a scripted first boot, run the documented manual onboarding command through the same compose wrapper:
 
 ```bash
-docker compose run --rm --no-deps --entrypoint node openclaw-gateway \
+docker compose -f docker-compose.openclaw.yml run --rm --no-deps --entrypoint node openclaw-gateway \
   dist/index.js onboard --mode local --non-interactive --no-install-daemon \
   --auth-choice ollama \
   --custom-base-url "http://192.168.68.116:11434" \
@@ -96,26 +107,40 @@ docker compose run --rm --no-deps --entrypoint node openclaw-gateway \
   --accept-risk
 ```
 
-Use the setup script when you want the supported interactive path. Use the explicit
-`onboard` command only when you need a scripted container bootstrap.
+The wrapper does not replace upstream conventions. It packages the documented manual flow into this repo while still using the published image and persistent bind mounts.
+
+The image is pinned on purpose. Do not default this runtime to `latest`, because upstream image changes can break the validation environment unexpectedly. Update the pinned tag intentionally when you want to move forward.
 
 After onboarding, keep the gateway up:
 
 ```bash
-docker compose up -d openclaw-gateway
+sh ./scripts/openclaw-docker-up.sh
 ```
 
 ## Day-To-Day Commands
 
-From the OpenClaw repo root:
+From `aura-pulse/`:
 
 ```bash
-docker compose ps
-docker compose logs -f openclaw-gateway
-docker compose run --rm openclaw-cli dashboard --no-open
-docker compose run --rm -T openclaw-cli models status
-docker compose stop openclaw-gateway
-docker compose up -d openclaw-gateway
+docker compose -f docker-compose.openclaw.yml ps
+docker compose -f docker-compose.openclaw.yml logs -f openclaw-gateway
+docker compose -f docker-compose.openclaw.yml run --rm openclaw-cli dashboard --no-open
+docker compose -f docker-compose.openclaw.yml run --rm -T openclaw-cli models status
+docker compose -f docker-compose.openclaw.yml stop openclaw-gateway
+sh ./scripts/openclaw-docker-up.sh
+```
+
+To start the Pulse UI in Docker too:
+
+```bash
+cd aura-pulse
+AURA_DOCKER_INCLUDE_PULSE=1 sh ./scripts/openclaw-docker-up.sh
+```
+
+Or directly through compose:
+
+```bash
+docker compose -f docker-compose.openclaw.yml --profile pulse-ui up -d openclaw-gateway aura-pulse-pwa
 ```
 
 ## Aura Boundary
@@ -145,13 +170,36 @@ This bundle now includes:
 - vendored `artist-reseller` package assets under `vendor/artist-reseller/`
 - vendored `contract-runtime` package assets under `vendor/contract-runtime/`
 
-The current isolated runtime is configured to load Aura from:
+The repo-owned Docker wrapper syncs the freshly built standalone bundle into the isolated workspace and configures OpenClaw to load Aura from:
 
 ```text
-/workspaces/aura-pulse/dist/openclaw-plugin-standalone
+/home/node/.openclaw/workspace/openclaw-plugin-standalone
 ```
 
-That means the container no longer depends on loading the plugin from the monorepo source package path.
+The startup wrapper refreshes that path from the current checkout before `docker compose up`:
+
+```text
+$OPENCLAW_WORKSPACE_DIR/openclaw-plugin-standalone
+```
+
+That keeps the repo-owned runtime self-contained, avoids duplicate plugin registration, and no longer requires a separate upstream repo checkout just to host Docker Compose.
+
+## Pulse Websocket And UI Ports
+
+The repo-owned wrapper publishes the Aura Pulse websocket directly:
+
+- host `28790` -> container `7700`
+
+The optional Dockerized Pulse UI is also available:
+
+- host `4175` -> container `4175`
+
+That removes the temporary manual bridge/forwarder that was previously needed for browser testing.
+
+The Dockerized Pulse UI does not negate running Pulse in Docker. It gives you both options:
+
+- run Pulse on the host during fast UI iteration
+- or run Pulse in the same Docker stack when you want a tighter end-to-end environment
 
 ## Connector State In The Isolated Runtime
 
@@ -184,4 +232,4 @@ Then follow:
 - Do not point this runtime at the host `~/.openclaw`
 - Do not reuse the user's existing workspace paths
 - Keep Aura bootstrap opt-in only
-- Treat the upstream runtime and the user's personal OpenClaw install as separate systems
+- Treat this repo-owned runtime and the user's personal OpenClaw install as separate systems

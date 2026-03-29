@@ -78,7 +78,7 @@ Pulse UI package for the decision surface and history experience. It has manual 
 | `@aura/artist-reseller` | Registry, triggers, domain types, and app scaffolds in place |
 | `@aura/pulse-pwa` | Present with manual demos; not yet part of the latest full runtime validation path |
 
-The old README state is no longer accurate. The current Phase 5 reconciliation, implementation summary, and drift list now live in `docs/plans/aura-os-phase5-status-v1.md`.
+The old README state is no longer accurate. The current Phase 5 reconciliation, implementation summary, and drift list now live in `docs/plans/aura-os-phase5-status-v2.md`.
 
 ---
 
@@ -134,8 +134,8 @@ Use the long-lived runtime for anything involving real OpenClaw onboarding, remo
 ## Important Docs
 
 - `docs/plans/aura-os-phase5-executor-plan-v1.md` — original Phase 5 implementation plan plus addenda
-- `docs/plans/aura-os-phase5-status-v1.md` — current implementation status, runtime notes, and confirmed drift from plan
-- `docs/openclaw-docker-runtime.md` — supported persistent OpenClaw Docker runtime and isolation rules
+- `docs/plans/aura-os-phase5-status-v2.md` — current implementation status, Pulse relay state, and active A2UI blocker
+- `docs/openclaw-docker-runtime.md` — repo-owned persistent OpenClaw Docker runtime wrapper and isolation rules
 - `docs/openclaw-manual-smoke.md` — current preflight and manual smoke path for the isolated runtime
 
 ---

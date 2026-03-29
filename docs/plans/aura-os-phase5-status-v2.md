@@ -202,6 +202,8 @@ The following were validated from the real Pulse browser UI in VS Code, not just
 5. The transcript showed the expected success markers:
    - `DIRECT_RELAY_EPSILON`
    - `DIRECT_RELAY_ZETA`
+6. After the repo-owned Docker cutover, the same direct owner-command path completed successfully in the migrated runtime with:
+   - `REPO_OWNED_RUNTIME_OK`
 
 This confirmed that the direct owner-command path is live and that the earlier tool-selection problem is fixed for workspace skill reads.
 
@@ -215,10 +217,20 @@ Result:
 - the live model generated malformed `a2ui_messages`
 - the tool rejected the call
 - Pulse did not render the intended workspace surface
+- a stricter follow-up owner prompt after the repo-owned Docker cleanup still failed in the same way for `surface_id` `sales-last-week-explicit`
 
 Observed live failure:
 
 - `aura_render_surface.a2ui_messages string must contain valid JSON.`
+
+The stricter follow-up prompt explicitly told the agent to:
+
+- read the Aura surface skill and component reference with the normal host `read` tool
+- call `aura_render_surface` exactly once
+- pass `a2ui_messages` as a native array argument, not a JSON string
+- use only built-in components for a small sales dashboard
+
+Even with those instructions, the live session still emitted a string value for `a2ui_messages` and failed validation before Pulse could render the interface. That means prompt specificity alone has not resolved the canonical A2UI emission problem for the active model.
 
 This is the current blocker.
 
@@ -226,15 +238,22 @@ This is the current blocker.
 
 ## 05 — Current Runtime And Browser Environment
 
-The persistent isolated upstream OpenClaw runtime is still the main validation target.
+The persistent isolated OpenClaw Docker runtime is still the main validation target.
 
-Current local layout remains:
+Current preferred layout is now repo-owned:
 
-- OpenClaw checkout: `~/Documents/openclaw-aura`
-- isolated config: `~/Documents/openclaw-aura-state/config`
-- isolated workspace: `~/Documents/openclaw-aura-state/workspace`
-- image: `ghcr.io/openclaw/openclaw:latest`
+- compose wrapper: `aura-pulse/docker-compose.openclaw.yml`
+- isolated config: `aura-pulse/.openclaw-docker/config`
+- isolated workspace: `aura-pulse/.openclaw-docker/workspace`
+- image: `ghcr.io/openclaw/openclaw:2026.3.24`
 - remote Ollama: `http://192.168.68.116:11434`
+
+The repo-owned runtime is now healthy after the cutover from the old external container:
+
+- `http://127.0.0.1:28789/healthz` returns `{"ok":true,"status":"live"}`
+- `http://127.0.0.1:28789/readyz` returns `{"ready":true}`
+- the Aura plugin websocket binds inside the container on `7700` and is published on host `28790`
+- the local Pulse page reconnects successfully and shows `live`
 
 Current host paths in use during this pass:
 
@@ -242,11 +261,23 @@ Current host paths in use during this pass:
 - Pulse PWA: `http://127.0.0.1:4175`
 - Pulse websocket path used by the browser: `ws://127.0.0.1:28790/aura/surface`
 
+Current local Pulse dev launch target:
+
+- `VITE_PLUGIN_URL=http://127.0.0.1:28789`
+- `VITE_WS_URL=ws://127.0.0.1:28790/aura/surface`
+- host dev port `4175`
+
 Important operational note:
 
-- the host `28790` path was restored for browser testing via an operational bridge/forwarder during this pass
-- that bridge is not yet expressed as a clean repo-managed runtime configuration
-- this means the current host Pulse path is workable for testing, but still somewhat procedural
+- the repo now contains a clean path to publish the Pulse websocket directly from Docker on host port `28790`
+- the old manual bridge/forwarder should no longer be treated as the desired steady-state setup once the repo-owned wrapper is adopted
+
+One repo-owned runtime cleanup also landed after the cutover:
+
+- the Aura plugin should load from the synced workspace bundle path only
+- the duplicate `/workspaces/aurora-os/aura-pulse/dist/openclaw-plugin-standalone` load path was identified as the source of the repeated duplicate-plugin warning and should not be reintroduced
+- the repo-owned config helper now removes that legacy path and keeps `/home/node/.openclaw/workspace/openclaw-plugin-standalone` as the single active Aura plugin load target
+- the local Pulse VS Code task now targets the repo-owned gateway/API ports directly with `VITE_PLUGIN_URL=http://127.0.0.1:28789`, `VITE_WS_URL=ws://127.0.0.1:28790/aura/surface`, and local dev port `4175`
 
 ---
 

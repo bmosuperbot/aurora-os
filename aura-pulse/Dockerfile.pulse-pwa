@@ -1,0 +1,34 @@
+FROM node:24-bookworm AS build
+
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+
+WORKDIR /workspace
+
+COPY pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/contract-runtime/package.json packages/contract-runtime/package.json
+COPY packages/pulse-pwa/package.json packages/pulse-pwa/package.json
+
+RUN pnpm install --filter @aura/pulse-pwa... --frozen-lockfile
+
+COPY packages/contract-runtime ./packages/contract-runtime
+COPY packages/pulse-pwa ./packages/pulse-pwa
+
+ARG VITE_PLUGIN_URL=http://127.0.0.1:28789
+ARG VITE_WS_URL=ws://127.0.0.1:28790/aura/surface
+
+ENV VITE_PLUGIN_URL=$VITE_PLUGIN_URL
+ENV VITE_WS_URL=$VITE_WS_URL
+
+WORKDIR /workspace/packages/pulse-pwa
+RUN pnpm build
+
+FROM node:24-bookworm-slim AS runtime
+
+RUN npm install -g serve@14.2.4
+
+WORKDIR /app
+COPY --from=build /workspace/packages/pulse-pwa/dist ./dist
+
+EXPOSE 4175
+
+CMD ["serve", "-s", "dist", "-l", "4175"]
