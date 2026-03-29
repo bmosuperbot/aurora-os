@@ -227,4 +227,90 @@ describe('WebSocketService', () => {
         await expect(svc.stop()).resolves.toBeUndefined()
         svc = null
     })
+
+    it('accepts submit_command and returns command_status', async () => {
+        const { runtime, storage, store } = makeMockRuntime()
+        const commandRelay = {
+            dispatch: vi.fn(async ({ commandId, text, modality }) => ({
+                sessionKey: 'agent:main:main',
+                message: `Queued ${modality}:${commandId}:${text}`,
+            })),
+            dispatchSurfaceAction: vi.fn(async ({ surfaceId, actionName }) => ({
+                sessionKey: 'agent:main:main',
+                message: `Queued ${surfaceId}:${actionName}`,
+            })),
+        }
+
+        svc = new WebSocketService(makeCfg(port), runtime, storage, signalPath, fakeLogger, null, null, commandRelay)
+        await svc.start()
+
+        ws = await openWs(port)
+        const messagesPromise = collectMessages(ws, 1, 2000)
+
+        ws.send(JSON.stringify({
+            type: 'submit_command',
+            payload: {
+                commandId: 'cmd-1',
+                text: 'Check today\'s Etsy offers',
+                modality: 'text',
+            },
+        }))
+
+        const msgs = await messagesPromise
+        const status = msgs.find(m => m.type === 'command_status')
+        expect(status?.payload?.commandId).toBe('cmd-1')
+        expect(status?.payload?.status).toBe('accepted')
+        expect(commandRelay.dispatch).toHaveBeenCalledWith({
+            commandId: 'cmd-1',
+            text: 'Check today\'s Etsy offers',
+            modality: 'text',
+        })
+        expect(store.autonomousLog).toHaveLength(1)
+        expect(store.autonomousLog[0]?.action).toBe('pulse_command_submitted')
+    })
+
+    it('accepts surface_action and relays it to the primary session', async () => {
+        const { runtime, storage, store } = makeMockRuntime()
+        const commandRelay = {
+            dispatch: vi.fn(async ({ commandId, text, modality }) => ({
+                sessionKey: 'agent:main:main',
+                message: `Queued ${modality}:${commandId}:${text}`,
+            })),
+            dispatchSurfaceAction: vi.fn(async ({ surfaceId, actionName, context }) => ({
+                sessionKey: 'agent:main:main',
+                message: `Queued ${surfaceId}:${actionName}:${JSON.stringify(context ?? {})}`,
+            })),
+        }
+
+        svc = new WebSocketService(makeCfg(port), runtime, storage, signalPath, fakeLogger, null, null, commandRelay)
+        await svc.start()
+
+        ws = await openWs(port)
+        ws.send(JSON.stringify({
+            type: 'surface_action',
+            payload: {
+                surfaceId: 'sales-last-week',
+                actionName: 'inspect_order',
+                sourceComponentId: 'inspect-button',
+                context: {
+                    orderId: 'A-104',
+                    gross: 182,
+                },
+            },
+        }))
+
+        await new Promise((resolve) => setTimeout(resolve, 50))
+
+        expect(commandRelay.dispatchSurfaceAction).toHaveBeenCalledWith({
+            surfaceId: 'sales-last-week',
+            actionName: 'inspect_order',
+            sourceComponentId: 'inspect-button',
+            context: {
+                orderId: 'A-104',
+                gross: 182,
+            },
+        })
+        expect(store.autonomousLog).toHaveLength(1)
+        expect(store.autonomousLog[0]?.action).toBe('pulse_surface_action_submitted')
+    })
 })

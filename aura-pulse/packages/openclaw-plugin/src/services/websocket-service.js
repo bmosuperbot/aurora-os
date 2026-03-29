@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { WebSocketServer } from 'ws'
 
 /**
@@ -31,6 +32,9 @@ import {
     buildSurfaceUpdate,
     buildClear,
     buildCompletion,
+    buildKernelSurface,
+    buildClearKernelSurface,
+    buildCommandStatus,
     buildConnectorRequest,
     buildConnectorComplete,
     parseInbound,
@@ -68,9 +72,13 @@ export class WebSocketService {
      * @param {string} signalPath
      * @param {PluginLogger} logger
      * @param {OnboardingStatus | null} [onboardingStatus]
-    * @param {ExecutionNotifier | null} [executor]
+     * @param {ExecutionNotifier | null} [executor]
+    * @param {{
+    *   dispatch(params: { commandId: string, text: string, modality: 'text' | 'voice' }): Promise<{ sessionKey: string, message: string }>,
+    *   dispatchSurfaceAction(params: { surfaceId: string, actionName: string, sourceComponentId?: string, context?: Record<string, unknown> }): Promise<{ sessionKey: string, message: string }>,
+    * } | null} [commandRelay]
      */
-    constructor(config, runtime, storage, signalPath, logger, onboardingStatus = null, executor = null) {
+    constructor(config, runtime, storage, signalPath, logger, onboardingStatus = null, executor = null, commandRelay = null) {
         /** @type {AuraPluginConfig} */ this._config = config
         /** @type {ContractRuntime} */ this._runtime = runtime
         /** @type {SQLiteContractStorage} */ this._storage = storage
@@ -78,6 +86,7 @@ export class WebSocketService {
         /** @type {PluginLogger} */ this._logger = logger
         /** @type {OnboardingStatus | null} */ this._onboardingStatus = onboardingStatus
         /** @type {ExecutionNotifier | null} */ this._executor = executor
+        /** @type {{ dispatch(params: { commandId: string, text: string, modality: 'text' | 'voice' }): Promise<{ sessionKey: string, message: string }>, dispatchSurfaceAction(params: { surfaceId: string, actionName: string, sourceComponentId?: string, context?: Record<string, unknown> }): Promise<{ sessionKey: string, message: string }> } | null} */ this._commandRelay = commandRelay
         /** @type {WebSocketServer | null} */ this._wss = null
         /** @type {SignalWatcher | null} */ this._watcher = null
         /** @type {ReturnType<typeof setInterval> | null} */ this._heartbeatTimer = null
@@ -103,6 +112,7 @@ export class WebSocketService {
                     cleanup()
                     resolve(server)
                 }
+                /** @param {Error} err */
                 const onError = (err) => {
                     cleanup()
                     server.close()
@@ -201,6 +211,22 @@ export class WebSocketService {
      */
     pushConnectorComplete(connectorId, status) {
         this._broadcast(buildConnectorComplete(connectorId, status))
+    }
+
+    /**
+     * Push a generic kernel-driven surface to all connected clients.
+     * @param {{ surfaceId: string, title?: string, summary?: string, voiceLine?: string, a2uiMessages?: unknown[] }} surface
+     */
+    pushKernelSurface(surface) {
+        this._broadcast(buildKernelSurface(surface))
+    }
+
+    /**
+     * Clear a previously rendered generic kernel surface.
+     * @param {string} surfaceId
+     */
+    clearKernelSurface(surfaceId) {
+        this._broadcast(buildClearKernelSurface(surfaceId))
     }
 
     /** @param {import('ws').WebSocket} ws */
@@ -383,6 +409,98 @@ export class WebSocketService {
                     }
                     this.pushConnectorComplete(connId, 'active')
                 }
+            }
+            break
+        }
+
+        case 'submit_command': {
+            const commandId = typeof payload['commandId'] === 'string' && payload['commandId'].length > 0
+                ? payload['commandId']
+                : randomUUID()
+            const text = typeof payload['text'] === 'string' ? payload['text'].trim() : ''
+            const modality = payload['modality'] === 'voice' ? 'voice' : 'text'
+
+            if (!text) {
+                this._send(_ws, buildCommandStatus(commandId, 'rejected', 'Command text is required.'))
+                break
+            }
+
+            if (!this._commandRelay) {
+                this._send(_ws, buildCommandStatus(commandId, 'rejected', 'Aura command relay is unavailable in this runtime.'))
+                break
+            }
+
+            try {
+                const result = await this._commandRelay.dispatch({ commandId, text, modality })
+                await this._runtime.logAutonomousAction?.({
+                    id: randomUUID(),
+                    timestamp: new Date().toISOString(),
+                    agent_id: 'owner',
+                    package: 'aura-pulse',
+                    action: 'pulse_command_submitted',
+                    summary: `Queued ${modality} command from Pulse`,
+                    detail: {
+                        command_id: commandId,
+                        modality,
+                        text,
+                        session_key: result.sessionKey,
+                    },
+                    connector_used: 'none',
+                })
+                this._send(_ws, buildCommandStatus(commandId, 'accepted', result.message))
+            } catch (err) {
+                const detail = err instanceof Error ? err.message : String(err)
+                this._send(_ws, buildCommandStatus(commandId, 'rejected', `Aura could not queue that command: ${detail}`))
+            }
+            break
+        }
+
+        case 'surface_action': {
+            const surfaceId = typeof payload['surfaceId'] === 'string' ? payload['surfaceId'].trim() : ''
+            const actionName = typeof payload['actionName'] === 'string' ? payload['actionName'].trim() : ''
+            const sourceComponentId = typeof payload['sourceComponentId'] === 'string'
+                ? payload['sourceComponentId']
+                : undefined
+            const context = typeof payload['context'] === 'object' && payload['context'] !== null
+                ? /** @type {Record<string, unknown>} */ (payload['context'])
+                : undefined
+
+            if (!surfaceId || !actionName) {
+                this._logger.warn('aura-pulse ws: surface_action missing surfaceId or actionName')
+                break
+            }
+
+            if (!this._commandRelay?.dispatchSurfaceAction) {
+                this._logger.warn('aura-pulse ws: surface_action dropped because command relay is unavailable')
+                break
+            }
+
+            try {
+                const relayParams = {
+                    surfaceId,
+                    actionName,
+                    ...(sourceComponentId ? { sourceComponentId } : {}),
+                    ...(context ? { context } : {}),
+                }
+                const result = await this._commandRelay.dispatchSurfaceAction(relayParams)
+                await this._runtime.logAutonomousAction?.({
+                    id: randomUUID(),
+                    timestamp: new Date().toISOString(),
+                    agent_id: 'owner',
+                    package: 'aura-pulse',
+                    action: 'pulse_surface_action_submitted',
+                    summary: `Queued workspace surface action ${actionName}`,
+                    detail: {
+                        surface_id: surfaceId,
+                        action_name: actionName,
+                        source_component_id: sourceComponentId,
+                        context,
+                        session_key: result.sessionKey,
+                    },
+                    connector_used: 'none',
+                })
+            } catch (err) {
+                this._logger.warn(`aura-pulse ws: could not queue surface action ${surfaceId}:${actionName}: ${String(err)}`)
             }
             break
         }

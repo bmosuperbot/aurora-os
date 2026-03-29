@@ -16,10 +16,10 @@ import { jailPath } from '../fs/path-jail.js'
 export function buildFsSearch(auraPaths) {
     return {
         name: 'aura_fs_search',
-        description: 'Search for a text pattern across files in the Aura PARA filesystem. Returns matching lines with context.',
+        description: 'Search for a text pattern across files in the Aura PARA projects tree only. Do not use this for OpenClaw workspace skills, AGENTS.md, HEARTBEAT.md, or other files under /home/node/.openclaw/workspace; use the host search or read tools for those.',
         parameters: Type.Object({
             query:        Type.String({ description: 'Text or regex pattern to search for' }),
-            path:         Type.Optional(Type.String({ description: 'Limit search to this relative path (directory or file). Defaults to projects root.' })),
+            path:         Type.Optional(Type.String({ description: 'Limit search to this relative path inside the Aura PARA projects tree. Defaults to projects root.' })),
             use_regex:    Type.Optional(Type.Boolean({ description: 'Treat query as a regular expression. Defaults to false.' })),
             max_results:  Type.Optional(Type.Number({ description: 'Max matching lines to return. Defaults to 50.', minimum: 1, maximum: 500 })),
             glob:         Type.Optional(Type.String({ description: 'Glob-style extension filter, e.g. "*.md". Defaults to all files.' })),

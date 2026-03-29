@@ -17,6 +17,7 @@ import { EngramCompletionBridge }     from './src/services/completion-bridge.js'
 import { WebSocketService }           from './src/services/websocket-service.js'
 import { FileBridgeWatcher }          from './src/services/file-bridge-watcher.js'
 import { ContractExecutor }           from './src/services/contract-executor.js'
+import { PulseCommandRelay }          from './src/services/pulse-command-relay.js'
 import { loadContributedTools }       from './src/services/tool-loader.js'
 import { ensureTriggers }             from './src/services/trigger-bootstrap.js'
 import { bootstrapRegistry, ensureOpenClawConfig } from './src/services/registry-bootstrap.js'
@@ -31,6 +32,8 @@ import { buildQueryContracts }        from './src/tools/aura-query-contracts.js'
 import { buildQueryConnections }      from './src/tools/aura-query-connections.js'
 import { buildCompleteContract }      from './src/tools/aura-complete-contract.js'
 import { buildRequestConnection }     from './src/tools/aura-request-connection.js'
+import { buildRenderSurface }         from './src/tools/aura-render-surface.js'
+import { buildClearSurface }          from './src/tools/aura-clear-surface.js'
 import { buildFsRead }                from './src/tools/aura-fs-read.js'
 import { buildFsWrite }               from './src/tools/aura-fs-write.js'
 import { buildFsPatch }               from './src/tools/aura-fs-patch.js'
@@ -102,6 +105,18 @@ function spawnCmd(bin, args) {
  * @typedef {object} RegistryManifest
  * @property {{ required: RegistryPlugin[], optional: RegistryPlugin[] }} plugins
  * @property {{ plugins: { allow: string[], load?: unknown } }} openclawConfig
+ */
+
+/**
+ * @typedef {import('./src/domain-types/loader.js').DomainTypesManifest} DomainTypesManifest
+ */
+
+/**
+ * @typedef {import('./src/services/websocket-service.js').ConnectorCardPayload} ConnectorCardPayload
+ */
+
+/**
+ * @typedef {import('./src/services/websocket-service.js').KernelSurfacePayload} KernelSurfacePayload
  */
 
 /**
@@ -180,16 +195,18 @@ function getGlobalPluginState() {
     const globalState = /** @type {Record<PropertyKey, unknown>} */ (globalThis)
     if (!globalState[PLUGIN_STATE_KEY]) {
         globalState[PLUGIN_STATE_KEY] = {
-            fullRegistered: false,
             manager: null,
+            registeredApis: new WeakSet(),
         }
     }
 
-    return /** @type {{ fullRegistered: boolean, manager: ReturnType<typeof createPluginManager> | null }} */ (globalState[PLUGIN_STATE_KEY])
+    return /** @type {{ manager: ReturnType<typeof createPluginManager> | null, registeredApis: WeakSet<object> }} */ (globalState[PLUGIN_STATE_KEY])
 }
 
 /**
  * @param {import('./src/config/schema.js').AuraPluginConfig} config
+ * @param {RegistryManifest} registryManifest
+ * @param {DomainTypesManifest} domainTypesManifest
  */
 function createPluginManager(config, registryManifest, domainTypesManifest) {
     return {
@@ -340,13 +357,13 @@ function createPluginManager(config, registryManifest, domainTypesManifest) {
                         }
 
                         const items = [
-                            ...registryManifest.plugins.required.map((plugin) => ({
+                            ...registryManifest.plugins.required.map((/** @type {RegistryPlugin} */ plugin) => ({
                                 id: plugin.id,
                                 label: plugin.description,
                                 status: loadedIds.includes(plugin.id) ? /** @type {const} */ ('installed') : /** @type {const} */ ('missing'),
                                 tier: /** @type {const} */ ('required'),
                             })),
-                            ...registryManifest.plugins.optional.map((plugin) => ({
+                            ...registryManifest.plugins.optional.map((/** @type {RegistryPlugin} */ plugin) => ({
                                 id: plugin.id,
                                 label: plugin.description,
                                 status: loadedIds.includes(plugin.id) ? /** @type {const} */ ('installed') : /** @type {const} */ ('not-installed'),
@@ -368,7 +385,8 @@ function createPluginManager(config, registryManifest, domainTypesManifest) {
                         registryStatus = null
                     }
 
-                    const wsService = new WebSocketService(config, runtime, storage, paths.signalPath, api.logger, registryStatus, executor)
+                    const commandRelay = new PulseCommandRelay(api, api.logger)
+                    const wsService = new WebSocketService(config, runtime, storage, paths.signalPath, api.logger, registryStatus, executor, commandRelay)
                     await wsService.start()
                     this._wsService = wsService
 
@@ -473,10 +491,11 @@ export default definePluginEntry({
         }
 
         const state = getGlobalPluginState()
-        if (state.fullRegistered) {
-            api.logger.debug?.('[aura-pulse] full registration already completed for this process')
+        if (state.registeredApis.has(api)) {
+            api.logger.debug?.('[aura-pulse] registration already completed for this api context')
             return
         }
+        state.registeredApis.add(api)
 
         const raw = api.pluginConfig ?? {}
         const config = normalizeConfig(raw)
@@ -504,22 +523,33 @@ export default definePluginEntry({
         const manager = state.manager ?? createPluginManager(config, registryManifest, domainTypesManifest)
         manager.bindApi(api)
         state.manager = manager
-        state.fullRegistered = true
 
         const runtime = createLazyProxy('ContractRuntime', () => manager.getRuntime())
         const storage = createLazyProxy('SQLiteContractStorage', () => manager.getStorage())
         const paths = createLazyProxy('AuraPaths', () => manager.getPaths())
-        const wsService = {
+        const wsService = /** @type {{
+            pushConnectorRequest(payload: ConnectorCardPayload): void,
+            pushConnectorComplete(connectorId: string, status: string): void,
+            pushKernelSurface(surface: KernelSurfacePayload): void,
+            clearKernelSurface(surfaceId: string): void,
+            nudge(): void,
+        }} */ ({
             pushConnectorRequest(payload) {
                 manager.getWebSocketService().pushConnectorRequest(payload)
             },
             pushConnectorComplete(connectorId, status) {
                 manager.getWebSocketService().pushConnectorComplete(connectorId, status)
             },
+            pushKernelSurface(surface) {
+                manager.getWebSocketService().pushKernelSurface(surface)
+            },
+            clearKernelSurface(surfaceId) {
+                manager.getWebSocketService().clearKernelSurface(surfaceId)
+            },
             nudge() {
                 manager.getWebSocketService().nudge()
             },
-        }
+        })
         const locks = new LockManager(storage, api.logger)
 
         api.registerService({
@@ -538,6 +568,8 @@ export default definePluginEntry({
         api.registerTool(toAgentTool(buildLogAction(runtime), 'Log Action'))
         api.registerTool(toAgentTool(buildQueryContracts(runtime), 'Query Contracts'))
         api.registerTool(toAgentTool(buildQueryConnections(storage), 'Query Connections'))
+        api.registerTool(toAgentTool(buildRenderSurface(wsService), 'Render Surface'))
+        api.registerTool(toAgentTool(buildClearSurface(wsService), 'Clear Surface'))
         api.registerTool(toAgentTool(buildRequestConnection(storage, wsService), 'Request Connection'))
         api.registerTool(toAgentTool(buildCompleteContract(runtime, storage), 'Complete Contract'))
 

@@ -71,6 +71,28 @@ export interface CompletionSurface {
   summary: string;
 }
 
+export interface CommandStatus {
+  commandId: string;
+  status: "accepted" | "rejected";
+  message: string;
+}
+
+export type KernelSurfaceType = "workspace" | "plan" | "attention" | "monitor" | "brief";
+export type KernelSurfacePriority = "low" | "normal" | "high";
+
+export interface KernelSurface {
+  surfaceId: string;
+  title?: string;
+  summary?: string;
+  voiceLine?: string;
+  surfaceType?: KernelSurfaceType;
+  priority?: KernelSurfacePriority;
+  collaborative?: boolean;
+  icon?: string;
+  a2uiMessages: A2UIMessage[];
+  receivedAt?: number;
+}
+
 export interface ConnectorCard {
   id?: string;
   source?: "openclaw-channel" | "aura-connector";
@@ -171,8 +193,17 @@ export type RuntimeMessage =
       contractId: string;
       surface: CompletionSurface;
     }
+  | {
+      type: "kernel_surface";
+      surface: KernelSurface;
+    }
+  | {
+      type: "clear_kernel_surface";
+      surfaceId: string;
+    }
   | { type: "connector_request"; card: ConnectorCard }
   | { type: "connector_complete"; connectorId: string }
+  | { type: "command_status"; commandId: string; status: "accepted" | "rejected"; message: string }
   | {
       type: "onboarding_status";
       items: OnboardingStatusItem[];
@@ -199,4 +230,12 @@ export type SurfaceMessage =
       connectorId: string;
       credentials?: Record<string, unknown>;
     }
-  | { type: "decline_connector"; connectorId: string; never?: boolean };
+  | { type: "decline_connector"; connectorId: string; never?: boolean }
+  | {
+      type: "surface_action";
+      surfaceId: string;
+      actionName: string;
+      sourceComponentId?: string;
+      context?: Record<string, unknown>;
+    }
+  | { type: "submit_command"; commandId: string; text: string; modality?: "text" | "voice" };

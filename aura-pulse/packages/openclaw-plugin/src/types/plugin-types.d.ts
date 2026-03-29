@@ -11,19 +11,81 @@ export interface PluginLogger {
     error(msg: string): void;
 }
 
+export interface PluginRuntimeAgentSessionEntry {
+    sessionId: string;
+    updatedAt: number;
+    [key: string]: unknown;
+}
+
+export interface PluginRuntimeAgentSessionStore {
+    [sessionKey: string]: PluginRuntimeAgentSessionEntry | undefined;
+}
+
+export interface RunEmbeddedPiAgentParams {
+    sessionId: string;
+    sessionKey?: string;
+    agentId?: string;
+    messageProvider?: string;
+    trigger?: 'cron' | 'heartbeat' | 'manual' | 'memory' | 'overflow' | 'user';
+    senderIsOwner?: boolean;
+    sessionFile: string;
+    workspaceDir: string;
+    agentDir?: string;
+    config?: Record<string, unknown>;
+    prompt: string;
+    provider?: string;
+    model?: string;
+    authProfileId?: string;
+    authProfileIdSource?: 'auto' | 'user';
+    thinkLevel?: string;
+    disableTools?: boolean;
+    timeoutMs: number;
+    runId: string;
+    extraSystemPrompt?: string;
+    streamParams?: Record<string, unknown>;
+    [key: string]: unknown;
+}
+
+export interface PluginRuntimeAgent {
+    defaults: {
+        provider: string;
+        model: string;
+    };
+    /** Accepts additional args the real SDK passes (agentId, env, etc.). */
+    resolveAgentDir(...args: unknown[]): string;
+    resolveAgentWorkspaceDir(...args: unknown[]): string;
+    resolveAgentIdentity(...args: unknown[]): { name?: string } | null | undefined;
+    resolveThinkingDefault(params: { cfg: Record<string, unknown>; provider: string; model: string }): string | undefined;
+    runEmbeddedPiAgent(params: RunEmbeddedPiAgentParams): Promise<unknown>;
+    resolveAgentTimeoutMs(params: { cfg?: Record<string, unknown> }): number;
+    ensureAgentWorkspace(params: { dir: string }): Promise<void>;
+    session: {
+        resolveStorePath(store: unknown, options: { agentId: string }): string;
+        loadSessionStore(storePath: string): PluginRuntimeAgentSessionStore;
+        saveSessionStore(storePath: string, store: PluginRuntimeAgentSessionStore): Promise<void>;
+        resolveSessionFilePath(
+            sessionId: string,
+            entry: PluginRuntimeAgentSessionEntry,
+            options: { agentId: string },
+        ): string;
+    };
+}
+
 export interface PluginRuntime {
     state: { resolveStateDir(): string };
-    agent: {
-        /** Accepts additional args the real SDK passes (agentId, env, etc.). */
-        resolveAgentDir(...args: unknown[]): string;
-        resolveAgentWorkspaceDir(...args: unknown[]): string;
-    };
+    agent: PluginRuntimeAgent;
     config?: {
         loadConfig(): Promise<Record<string, unknown>>;
     };
     system?: {
         enqueueSystemEvent(text: string, options: { sessionKey: string }): Promise<void>;
         requestHeartbeatNow(options: { sessionKey: string; reason: string }): void;
+        runHeartbeatOnce?(options?: {
+            reason?: string;
+            agentId?: string;
+            sessionKey?: string;
+            heartbeat?: { target?: string };
+        }): Promise<unknown>;
     };
     subagent?: {
         run(options: { sessionKey: string; prompt: string; deliver?: boolean }): Promise<unknown>;

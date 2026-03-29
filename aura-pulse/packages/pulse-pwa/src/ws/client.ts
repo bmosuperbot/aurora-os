@@ -157,6 +157,39 @@ export class PulseWebSocketClient implements PulseWebSocketTransport {
               },
         };
 
+      case "kernel_surface":
+        if (typeof payload.surfaceId !== "string") return null;
+        return {
+          type: "kernel_surface",
+          surface: {
+            surfaceId: payload.surfaceId,
+            title: typeof payload.title === "string" ? payload.title : undefined,
+            summary: typeof payload.summary === "string" ? payload.summary : undefined,
+            voiceLine: typeof payload.voiceLine === "string" ? payload.voiceLine : undefined,
+            surfaceType:
+              payload.surfaceType === "workspace"
+              || payload.surfaceType === "plan"
+              || payload.surfaceType === "attention"
+              || payload.surfaceType === "monitor"
+              || payload.surfaceType === "brief"
+                ? payload.surfaceType
+                : undefined,
+            priority:
+              payload.priority === "low"
+              || payload.priority === "normal"
+              || payload.priority === "high"
+                ? payload.priority
+                : undefined,
+            collaborative: typeof payload.collaborative === "boolean" ? payload.collaborative : undefined,
+            icon: typeof payload.icon === "string" ? payload.icon : undefined,
+            a2uiMessages: Array.isArray(payload.a2uiMessages) ? payload.a2uiMessages as A2UIMessage[] : [],
+          },
+        };
+
+      case "clear_kernel_surface":
+        if (typeof payload.surfaceId !== "string") return null;
+        return { type: "clear_kernel_surface", surfaceId: payload.surfaceId };
+
       case "connector_request": {
         const connectorId = typeof payload.connector_id === "string"
           ? payload.connector_id
@@ -188,6 +221,20 @@ export class PulseWebSocketClient implements PulseWebSocketTransport {
         if (typeof payload.connectorId !== "string") return null;
         return { type: "connector_complete", connectorId: payload.connectorId };
 
+      case "command_status":
+        if (
+          typeof payload.commandId !== "string"
+          || (payload.status !== "accepted" && payload.status !== "rejected")
+        ) {
+          return null;
+        }
+        return {
+          type: "command_status",
+          commandId: payload.commandId,
+          status: payload.status,
+          message: typeof payload.message === "string" ? payload.message : "",
+        };
+
       default:
         return null;
     }
@@ -218,6 +265,25 @@ export class PulseWebSocketClient implements PulseWebSocketTransport {
         return { type: message.type, payload: { connectorId: message.connectorId, credentials: message.credentials } };
       case "decline_connector":
         return { type: message.type, payload: { connectorId: message.connectorId, never: message.never } };
+      case "surface_action":
+        return {
+          type: message.type,
+          payload: {
+            surfaceId: message.surfaceId,
+            actionName: message.actionName,
+            ...(message.sourceComponentId ? { sourceComponentId: message.sourceComponentId } : {}),
+            ...(message.context ? { context: message.context } : {}),
+          },
+        };
+      case "submit_command":
+        return {
+          type: message.type,
+          payload: {
+            commandId: message.commandId,
+            text: message.text,
+            modality: message.modality ?? "text",
+          },
+        };
     }
   }
 

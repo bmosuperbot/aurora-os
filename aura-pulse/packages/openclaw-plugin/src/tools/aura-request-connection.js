@@ -2,7 +2,12 @@ import { Type } from '@sinclair/typebox'
 
 /**
  * @import { SQLiteContractStorage } from '@aura/contract-runtime'
- * @import { WebSocketService } from '../services/websocket-service.js'
+ */
+
+/**
+ * @typedef {{
+ *   pushConnectorRequest(connector: ConnectorCardPayload): void,
+ * }} ConnectorCardTransport
  */
 
 /**
@@ -27,7 +32,7 @@ import { Type } from '@sinclair/typebox'
  * aura_request_connection — surface a connector-card request to the human.
  *
  * @param {SQLiteContractStorage} storage
- * @param {WebSocketService} wsService
+ * @param {ConnectorCardTransport} wsService
  * @returns {import('../types/plugin-types.js').RegisteredTool}
  */
 export function buildRequestConnection(storage, wsService) {
@@ -35,7 +40,8 @@ export function buildRequestConnection(storage, wsService) {
         name: 'aura_request_connection',
         description:
             'Request a human to authorise a new service connection (OAuth, API key, etc.). ' +
-            'Pushes a connector card to the Pulse surface and records the connection as pending.',
+            'Pushes exactly one connector card to the Pulse surface and records the connection as pending. ' +
+            'Choose one flow shape only: browser_redirect requires auth_url, secure_input requires input_label, and manual_guide requires guide_steps. Do not invent extra fields or mix multiple flow shapes in one call.',
         parameters: Type.Object({
             connector_id: Type.String({ description: 'Unique identifier for this connector type (e.g. "github", "notion")' }),
             display_name: Type.String({ description: 'Human-readable name shown on the connector card' }),
@@ -45,10 +51,10 @@ export function buildRequestConnection(storage, wsService) {
                 Type.Literal('browser_redirect'),
                 Type.Literal('secure_input'),
                 Type.Literal('manual_guide'),
-            ], { description: 'How the Pulse UI should complete this connector flow' })),
-            auth_url:     Type.Optional(Type.String({ description: 'Authorization URL for browser redirect flows' })),
-            input_label:  Type.Optional(Type.String({ description: 'Label for secure-input flows' })),
-            guide_steps:  Type.Optional(Type.Array(Type.String(), { description: 'Step-by-step instructions for manual guide flows' })),
+            ], { description: 'How the Pulse UI should complete this connector flow. Allowed values: browser_redirect, secure_input, manual_guide.' })),
+            auth_url:     Type.Optional(Type.String({ description: 'Authorization URL. Use only when flow_type is browser_redirect.' })),
+            input_label:  Type.Optional(Type.String({ description: 'Field label shown in the secure input form. Use only when flow_type is secure_input.' })),
+            guide_steps:  Type.Optional(Type.Array(Type.String(), { description: 'Ordered manual instructions. Use only when flow_type is manual_guide.' })),
         }),
         async execute(_id, params) {
             const p = /** @type {any} */ (params)

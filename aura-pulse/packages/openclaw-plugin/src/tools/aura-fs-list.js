@@ -24,9 +24,9 @@ import { jailPath } from '../fs/path-jail.js'
 export function buildFsList(auraPaths) {
     return {
         name: 'aura_fs_list',
-        description: 'List the contents of a directory in the Aura PARA filesystem.',
+        description: 'List directories in the Aura PARA projects tree only. Do not use this for OpenClaw workspace files, skills, or bootstrap files under /home/node/.openclaw/workspace; use the host read/list tools for those.',
         parameters: Type.Object({
-            path:      Type.Optional(Type.String({ description: 'Relative path within the PARA tree. Defaults to the projects root.' })),
+            path:      Type.Optional(Type.String({ description: 'Relative path within the Aura PARA projects tree. Defaults to the projects root.' })),
             recursive: Type.Optional(Type.Boolean({ description: 'List recursively. Defaults to false.' })),
         }),
         async execute(_id, params) {

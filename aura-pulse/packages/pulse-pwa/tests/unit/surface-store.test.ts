@@ -52,10 +52,13 @@ function resetStore() {
     contract: null,
     a2uiMessages: [],
     completionSurface: null,
+    kernelSurfaces: [],
     pendingContracts: [],
     artifactUnderlyingMode: "silent",
     connectorCard: null,
     connectorUnderlyingMode: "silent",
+    onboardingOpen: false,
+    onboardingItems: [],
     historyOpen: false,
     briefOpen: false,
     wsStatus: "disconnected",
@@ -255,6 +258,133 @@ describe("surface-store state machine", () => {
     const { mode, completionSurface } = useSurfaceStore.getState();
     expect(mode).toBe("completion");
     expect(completionSurface?.summary).toBe("Report sent.");
+  });
+
+  it("transitions silent → workspace on 'kernel_surface'", () => {
+    useSurfaceStore.getState().handleMessage(msg({
+      type: "kernel_surface",
+      surface: {
+        surfaceId: "sales-last-week",
+        title: "Last week's sales",
+        summary: "Three orders closed.",
+        voiceLine: "Here is last week's sales summary.",
+        a2uiMessages: [],
+      },
+    }));
+
+    expect(useSurfaceStore.getState().mode).toBe("workspace");
+    expect(useSurfaceStore.getState().kernelSurfaces[0]?.surfaceId).toBe("sales-last-week");
+  });
+
+  it("keeps multiple kernel surfaces active at once", () => {
+    useSurfaceStore.getState().handleMessage(msg({
+      type: "kernel_surface",
+      surface: {
+        surfaceId: "sales-last-week",
+        title: "Last week's sales",
+        a2uiMessages: [],
+      },
+    }));
+
+    useSurfaceStore.getState().handleMessage(msg({
+      type: "kernel_surface",
+      surface: {
+        surfaceId: "grant-plan",
+        title: "Grant plan",
+        a2uiMessages: [],
+      },
+    }));
+
+    expect(useSurfaceStore.getState().kernelSurfaces.map((surface) => surface.surfaceId)).toEqual([
+      "sales-last-week",
+      "grant-plan",
+    ]);
+  });
+
+  it("promotes decisions over workspace and restores workspace on clear", () => {
+    const contract = makeContract();
+
+    useSurfaceStore.getState().handleMessage(msg({
+      type: "kernel_surface",
+      surface: {
+        surfaceId: "sales-last-week",
+        title: "Last week's sales",
+        a2uiMessages: [],
+      },
+    }));
+    useSurfaceStore.getState().handleMessage(msg({ type: "decision", contract }));
+
+    expect(useSurfaceStore.getState().mode).toBe("decision");
+    expect(useSurfaceStore.getState().contract?.id).toBe("c-1");
+
+    useSurfaceStore.getState().handleMessage(msg({ type: "clear", contractId: "c-1", reason: "resolved" }));
+
+    expect(useSurfaceStore.getState().mode).toBe("workspace");
+    expect(useSurfaceStore.getState().kernelSurfaces[0]?.surfaceId).toBe("sales-last-week");
+  });
+
+  it("returns to workspace on 'abandon' when a kernel surface is active", () => {
+    const contract = makeContract();
+
+    useSurfaceStore.getState().handleMessage(msg({
+      type: "kernel_surface",
+      surface: {
+        surfaceId: "sales-last-week",
+        title: "Last week's sales",
+        a2uiMessages: [],
+      },
+    }));
+    useSurfaceStore.getState().handleMessage(msg({ type: "decision", contract }));
+    useSurfaceStore.getState().sendMessage({ type: "abandon", contractId: "c-1" });
+
+    expect(useSurfaceStore.getState().mode).toBe("workspace");
+    expect(useSurfaceStore.getState().contract).toBeNull();
+  });
+
+  it("clears only the matching workspace surface on 'clear_kernel_surface'", () => {
+    useSurfaceStore.getState().handleMessage(msg({
+      type: "kernel_surface",
+      surface: {
+        surfaceId: "sales-last-week",
+        title: "Last week's sales",
+        a2uiMessages: [],
+      },
+    }));
+
+    useSurfaceStore.getState().handleMessage(msg({
+      type: "kernel_surface",
+      surface: {
+        surfaceId: "inbox-summary",
+        title: "Inbox summary",
+        a2uiMessages: [],
+      },
+    }));
+
+    useSurfaceStore.getState().handleMessage(msg({ type: "clear_kernel_surface", surfaceId: "sales-last-week" }));
+
+    expect(useSurfaceStore.getState().mode).toBe("workspace");
+    expect(useSurfaceStore.getState().kernelSurfaces.map((surface) => surface.surfaceId)).toEqual(["inbox-summary"]);
+  });
+
+  it("forwards workspace surface actions through the transport", () => {
+    const send = vi.fn();
+    useSurfaceStore.getState().configureTransport(send);
+
+    useSurfaceStore.getState().sendMessage({
+      type: "surface_action",
+      surfaceId: "sales-last-week",
+      actionName: "inspect_order",
+      sourceComponentId: "inspect-button",
+      context: { orderId: "A-104", gross: 182 },
+    });
+
+    expect(send).toHaveBeenCalledWith({
+      type: "surface_action",
+      surfaceId: "sales-last-week",
+      actionName: "inspect_order",
+      sourceComponentId: "inspect-button",
+      context: { orderId: "A-104", gross: 182 },
+    });
   });
 
   // ── Connector ─────────────────────────────────────────────────────────────

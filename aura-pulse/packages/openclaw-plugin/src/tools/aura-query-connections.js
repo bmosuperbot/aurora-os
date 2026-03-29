@@ -14,9 +14,9 @@ import { Type } from '@sinclair/typebox'
 export function buildQueryConnections(storage) {
     return {
         name: 'aura_query_connections',
-        description: 'List known connector states. Token/credential fields are never returned.',
+        description: 'List known connector states. Token or credential fields are never returned. This tool only supports an optional status filter; it does not support filtering by connector id, name, or source. If you need one connector, call this tool and filter the returned rows client-side.',
         parameters: Type.Object({
-            status: Type.Optional(Type.String({ description: 'Filter by connector status (pending, active, declined, revoked)' })),
+            status: Type.Optional(Type.String({ description: 'Optional status filter. Supported values are pending, active, declined, revoked, error, and not-offered.' })),
         }),
         async execute(_id, params) {
             const p       = /** @type {any} */ (params)

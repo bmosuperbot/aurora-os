@@ -4,6 +4,7 @@ import type {
   ConnectorCard,
   OnboardingStatusItem,
   A2UIMessage,
+  KernelSurface,
   RuntimeMessage,
   SurfaceMessage,
   CompletionSurface,
@@ -20,6 +21,7 @@ export type SurfaceMode =
   | "artifact_review"
   | "confirming"
   | "completion"
+  | "workspace"
   | "connector";
 
 const defaultTransportSend = (msg: SurfaceMessage) => {
@@ -57,6 +59,22 @@ function takeNextPendingContract(
   return { next, rest };
 }
 
+function upsertKernelSurface(kernelSurfaces: KernelSurface[], incoming: KernelSurface): KernelSurface[] {
+  const nextSurface = {
+    ...incoming,
+    receivedAt: incoming.receivedAt ?? Date.now(),
+  };
+  const existingIndex = kernelSurfaces.findIndex((surface) => surface.surfaceId === nextSurface.surfaceId);
+
+  if (existingIndex === -1) {
+    return [...kernelSurfaces, nextSurface];
+  }
+
+  const next = [...kernelSurfaces];
+  next.splice(existingIndex, 1, nextSurface);
+  return next;
+}
+
 // ── Store shape ───────────────────────────────────────────────────────────────
 
 export interface SurfaceState {
@@ -64,6 +82,7 @@ export interface SurfaceState {
   contract: BaseContract | null;
   a2uiMessages: A2UIMessage[];
   completionSurface: CompletionSurface | null;
+  kernelSurfaces: KernelSurface[];
   pendingContracts: Array<{ contract: BaseContract; a2uiMessages: A2UIMessage[] }>;
   artifactUnderlyingMode: SurfaceMode;
   connectorCard: ConnectorCard | null;
@@ -97,6 +116,7 @@ export const useSurfaceStore = create<SurfaceState>((set, get) => ({
   contract: null,
   a2uiMessages: [],
   completionSurface: null,
+  kernelSurfaces: [],
   pendingContracts: [],
   artifactUnderlyingMode: "silent",
   connectorCard: null,
@@ -123,11 +143,35 @@ export const useSurfaceStore = create<SurfaceState>((set, get) => ({
           break;
         }
 
-        if (state.mode === "silent" || state.mode === "completion") {
+        if (state.mode === "silent" || state.mode === "completion" || state.mode === "workspace") {
           set({ mode: "decision", contract: entry.contract, a2uiMessages: entry.a2uiMessages });
         } else {
           set((s) => ({ pendingContracts: upsertPendingContract(s.pendingContracts, entry) }));
         }
+        break;
+      }
+
+      case "kernel_surface": {
+        const shouldPromote = !state.contract && (state.mode === "silent" || state.mode === "completion" || state.mode === "workspace");
+        set({
+          kernelSurfaces: upsertKernelSurface(state.kernelSurfaces, {
+            ...msg.surface,
+            receivedAt: Date.now(),
+          }),
+          ...(shouldPromote ? { mode: "workspace" as const, completionSurface: null } : {}),
+        });
+        break;
+      }
+
+      case "clear_kernel_surface": {
+        if (!state.kernelSurfaces.some((surface) => surface.surfaceId === msg.surfaceId)) {
+          break;
+        }
+        const remainingSurfaces = state.kernelSurfaces.filter((surface) => surface.surfaceId !== msg.surfaceId);
+        set({
+          kernelSurfaces: remainingSurfaces,
+          ...(state.mode === "workspace" && remainingSurfaces.length === 0 ? { mode: "silent" as const } : {}),
+        });
         break;
       }
 
@@ -199,7 +243,7 @@ export const useSurfaceStore = create<SurfaceState>((set, get) => ({
           });
         } else {
           set({
-            mode: "silent",
+            mode: get().kernelSurfaces.length > 0 ? "workspace" : "silent",
             contract: null,
             a2uiMessages: [],
             completionSurface: null,
@@ -262,7 +306,7 @@ export const useSurfaceStore = create<SurfaceState>((set, get) => ({
         set({ mode: "confirming" });
         break;
       case "abandon":
-        set({ mode: "silent", contract: null, a2uiMessages: [] });
+        set({ mode: get().kernelSurfaces.length > 0 ? "workspace" : "silent", contract: null, a2uiMessages: [] });
         break;
       case "decline_connector":
       case "complete_connector":
@@ -306,7 +350,12 @@ export const useSurfaceStore = create<SurfaceState>((set, get) => ({
       });
       return;
     }
-    set({ mode: "silent", contract: null, a2uiMessages: [], completionSurface: null });
+    set((state) => ({
+      mode: state.kernelSurfaces.length > 0 ? "workspace" : "silent",
+      contract: null,
+      a2uiMessages: [],
+      completionSurface: null,
+    }));
   },
 
   dismissOnboarding: () => set({ onboardingOpen: false }),

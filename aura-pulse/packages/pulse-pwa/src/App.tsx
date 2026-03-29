@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useRef, type ReactNode } from "react";
+import { registerAuraCatalog } from "./a2ui/aura-catalog.js";
 import { useSurfaceStore } from "./ws/surface-store.js";
 import { pulseWSClient, type PulseWebSocketTransport } from "./ws/client.js";
 import { voiceEngine } from "./voice/voice-engine.js";
@@ -6,12 +7,16 @@ import { SilentSurface } from "./surface/SilentSurface.js";
 import { DecisionCard } from "./surface/DecisionCard/DecisionCard.js";
 import { ConfirmingCard } from "./surface/ConfirmingCard.js";
 import { CompletionCard } from "./surface/CompletionCard.js";
+import { WorkspaceSurface } from "./surface/WorkspaceSurface.js";
+import { CommandDock } from "./surface/CommandDock.js";
 import { ConnectorCardOverlay } from "./surface/ConnectorCard/ConnectorCard.js";
 import { OnboardingView } from "./surface/OnboardingView.js";
 import { HistoryOverlay } from "./history/HistoryOverlay.js";
 import { MorningBrief } from "./morning-brief/MorningBrief.js";
 import { getPluginWsUrl } from "./api/plugin-config.js";
 import type { RuntimeMessage } from "./ws/protocol.js";
+
+registerAuraCatalog();
 
 interface AppProps {
   wsClient?: PulseWebSocketTransport;
@@ -23,6 +28,7 @@ export function App({ wsClient = pulseWSClient }: AppProps) {
     contract,
     a2uiMessages,
     completionSurface,
+    kernelSurfaces,
     connectorCard,
     onboardingOpen,
     onboardingItems,
@@ -62,6 +68,7 @@ export function App({ wsClient = pulseWSClient }: AppProps) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Speak voice lines on decision entry
+  const latestKernelSurface = kernelSurfaces[kernelSurfaces.length - 1] ?? null;
   const prevModeRef = useRef(mode);
   useEffect(() => {
     if (
@@ -78,8 +85,15 @@ export function App({ wsClient = pulseWSClient }: AppProps) {
     ) {
       voiceEngine.speak(completionSurface.voice_line, "high");
     }
+    if (
+      mode === "workspace" &&
+      prevModeRef.current !== "workspace" &&
+      latestKernelSurface?.voiceLine
+    ) {
+      voiceEngine.speak(latestKernelSurface.voiceLine, "high");
+    }
     prevModeRef.current = mode;
-  }, [mode, contract?.id, completionSurface?.summary]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mode, contract?.id, completionSurface?.summary, latestKernelSurface?.surfaceId, latestKernelSurface?.receivedAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Route to the correct surface component
   const renderSurface = useCallback((): ReactNode => {
@@ -89,6 +103,10 @@ export function App({ wsClient = pulseWSClient }: AppProps) {
       ) : (
         <SilentSurface />
       );
+    }
+
+    if (mode === "workspace") {
+      return kernelSurfaces.length > 0 ? <WorkspaceSurface surfaces={kernelSurfaces} /> : <SilentSurface />;
     }
 
     if (!contract) return <SilentSurface />;
@@ -124,12 +142,15 @@ export function App({ wsClient = pulseWSClient }: AppProps) {
       default:
         return <SilentSurface />;
     }
-  }, [mode, contract, a2uiMessages, completionSurface, dismissCompletion]);
+  }, [mode, contract, a2uiMessages, completionSurface, dismissCompletion, kernelSurfaces]);
 
   return (
     <div className="app-root">
       {/* Primary surface */}
       {renderSurface()}
+
+      {/* Persistent owner command channel */}
+      <CommandDock wsClient={wsClient} />
 
       {/* Onboarding overlay — shown when registry is incomplete */}
       {onboardingOpen && <OnboardingView items={onboardingItems} onDismiss={dismissOnboarding} />}

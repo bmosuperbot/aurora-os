@@ -31,15 +31,15 @@ import { touchSignal } from '../fs/signal.js'
 export function buildFsPatch(auraPaths, locks, runtime, agentId) {
     return {
         name: 'aura_fs_patch',
-        description: 'Apply one or more search/replace patches to a file using fuzzy diff-match-patch logic. Acquires a file lock.',
+        description: 'Apply one or more search/replace patches to a file using fuzzy diff-match-patch logic. The patches parameter must be an array of objects, and each object must use the exact keys search and replace. Do not pass plain strings or alternate keys such as src/tgt. Acquires a file lock.',
         parameters: Type.Object({
             path:    Type.String({ description: 'Relative path within the PARA tree' }),
             patches: Type.Array(
                 Type.Object({
-                    search:  Type.String({ description: 'Exact (or near-exact) text to find' }),
-                    replace: Type.String({ description: 'Text to replace it with' }),
+                    search:  Type.String({ description: 'Exact (or near-exact) text to find. Required key name: search.' }),
+                    replace: Type.String({ description: 'Text to replace it with. Required key name: replace.' }),
                 }),
-                { minItems: 1, description: 'Ordered list of search/replace operations' }
+                { minItems: 1, description: 'Ordered list of patch objects. Example: [{"search":"old text","replace":"new text"}]' }
             ),
         }),
         async execute(_id, params) {

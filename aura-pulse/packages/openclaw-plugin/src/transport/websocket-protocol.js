@@ -7,6 +7,8 @@
  *   clarification_answer — agent answered an active clarification
  *   clear              — contract is no longer surfaceable (resolved/failed)
  *   completion         — contract reached complete status
+ *   kernel_surface     — general-purpose OpenClaw kernel interface rendered in Pulse
+ *   clear_kernel_surface — clear the general-purpose kernel interface
  *   connector_request  — connector card to display
  *   connector_complete — connector flow finished
  *
@@ -18,6 +20,7 @@
  *   initiate_connector — operator wants to start a connector flow
  *   complete_connector — connector data received from the surface
  *   decline_connector  — operator declines a connector offer
+ *   submit_command     — owner-originated Aura Pulse command for the primary agent
  */
 
 /**
@@ -117,6 +120,35 @@ export function buildCompletion(contractId, surface) {
 }
 
 /**
+ * @param {{ surfaceId: string, title?: string, summary?: string, voiceLine?: string, surfaceType?: 'workspace' | 'plan' | 'attention' | 'monitor' | 'brief', priority?: 'low' | 'normal' | 'high', collaborative?: boolean, icon?: string, a2uiMessages?: unknown[] }} surface
+ * @returns {string}
+ */
+export function buildKernelSurface(surface) {
+    return JSON.stringify({
+        type: 'kernel_surface',
+        payload: {
+            surfaceId: surface.surfaceId,
+            ...(surface.title ? { title: surface.title } : {}),
+            ...(surface.summary ? { summary: surface.summary } : {}),
+            ...(surface.voiceLine ? { voiceLine: surface.voiceLine } : {}),
+            ...(surface.surfaceType ? { surfaceType: surface.surfaceType } : {}),
+            ...(surface.priority ? { priority: surface.priority } : {}),
+            ...(typeof surface.collaborative === 'boolean' ? { collaborative: surface.collaborative } : {}),
+            ...(surface.icon ? { icon: surface.icon } : {}),
+            ...(surface.a2uiMessages ? { a2uiMessages: surface.a2uiMessages } : {}),
+        },
+    })
+}
+
+/**
+ * @param {string} surfaceId
+ * @returns {string}
+ */
+export function buildClearKernelSurface(surfaceId) {
+    return JSON.stringify({ type: 'clear_kernel_surface', payload: { surfaceId } })
+}
+
+/**
  * @param {ConnectorCardPayload} connector
  * @returns {string}
  */
@@ -148,6 +180,16 @@ export function buildConnectorRequest(connector) {
  */
 export function buildConnectorComplete(connectorId, status) {
     return JSON.stringify({ type: 'connector_complete', payload: { connectorId, status } })
+}
+
+/**
+ * @param {string} commandId
+ * @param {'accepted' | 'rejected'} status
+ * @param {string} message
+ * @returns {string}
+ */
+export function buildCommandStatus(commandId, status, message) {
+    return JSON.stringify({ type: 'command_status', payload: { commandId, status, message } })
 }
 
 /**

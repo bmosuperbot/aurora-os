@@ -19,9 +19,9 @@ export function buildFsRead(auraPaths, locks) {
 
     return {
         name: 'aura_fs_read',
-        description: 'Read a file from the Aura PARA filesystem. Paths are relative to the projects root.',
+        description: 'Read a file from the Aura PARA projects tree only. Paths are relative to the projects root. Do not use this for OpenClaw workspace files such as SKILL.md, AGENTS.md, HEARTBEAT.md, or anything under /home/node/.openclaw/workspace; use the host read tool for those.',
         parameters: Type.Object({
-            path:     Type.String({ description: 'Relative path within the PARA tree' }),
+            path:     Type.String({ description: 'Relative path within the Aura PARA projects tree only' }),
             encoding: Type.Optional(Type.Enum({ utf8: 'utf8' }, { description: 'File encoding. Only utf8 supported.' })),
         }),
         async execute(_id, params) {

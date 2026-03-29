@@ -23,10 +23,11 @@ export function buildCompleteContract(runtime, storage) {
         description:
             'Mark a contract as complete after all required work is done. ' +
             'Call this as the final step of every execution goal. ' +
-            'Provide a brief human-readable summary of what was accomplished.',
+            'Provide a brief human-readable summary of what was accomplished. ' +
+            'If the contract has complete_requires entries, this call will fail with missing_required_actions until those action names have been logged.',
         parameters: Type.Object({
             contract_id: Type.String({ description: 'The ID of the contract to complete' }),
-            summary:     Type.String({ description: 'Human-readable summary of what was accomplished' }),
+            summary:     Type.String({ description: 'Required human-readable summary of what was accomplished' }),
         }),
         async execute(_id, params) {
             const p = /** @type {{ contract_id: string, summary: string }} */ (params)

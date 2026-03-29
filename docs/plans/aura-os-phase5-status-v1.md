@@ -2,6 +2,8 @@
 status: implemented-with-known-gaps
 date: March 28, 2026
 
+> Superseded by `docs/plans/aura-os-phase5-status-v2.md` for the March 29 Pulse relay, provider, and A2UI work. Use the v2 file for the next agent handoff.
+
 ---
 
 ## 01 — Current State

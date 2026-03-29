@@ -29,7 +29,7 @@ import { randomUUID } from 'node:crypto'
 export function buildSurfaceDecision(runtime, options = {}) {
     return {
         name: 'aura_surface_decision',
-        description: 'Surface a decision card to the owner for approval. Creates a waiting_approval contract and makes it visible in the Pulse UI. Use this when the agent reaches a decision point that requires human judgment.',
+        description: 'Surface a decision card to the owner for approval. Creates a waiting_approval contract and makes it visible in the Pulse UI. Use this when the agent reaches a decision point that requires human judgment. The type field must be a registered contract domain type; invented or unregistered types will fail validation.',
         parameters: Type.Object({
             type:       Type.String({ description: 'Registered contract domain type, e.g. offer-received' }),
             goal:       Type.String({ description: 'What the agent is trying to accomplish' }),
