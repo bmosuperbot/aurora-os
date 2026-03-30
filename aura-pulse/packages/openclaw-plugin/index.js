@@ -32,6 +32,7 @@ import { buildQueryContracts }        from './src/tools/aura-query-contracts.js'
 import { buildQueryConnections }      from './src/tools/aura-query-connections.js'
 import { buildCompleteContract }      from './src/tools/aura-complete-contract.js'
 import { buildRequestConnection }     from './src/tools/aura-request-connection.js'
+import { buildSurface }               from './src/tools/aura-surface.js'
 import { buildRenderSurface }         from './src/tools/aura-render-surface.js'
 import { buildClearSurface }          from './src/tools/aura-clear-surface.js'
 import { buildFsRead }                from './src/tools/aura-fs-read.js'
@@ -568,6 +569,7 @@ export default definePluginEntry({
         api.registerTool(toAgentTool(buildLogAction(runtime), 'Log Action'))
         api.registerTool(toAgentTool(buildQueryContracts(runtime), 'Query Contracts'))
         api.registerTool(toAgentTool(buildQueryConnections(storage), 'Query Connections'))
+        api.registerTool(toAgentTool(buildSurface(wsService), 'Surface'))
         api.registerTool(toAgentTool(buildRenderSurface(wsService), 'Render Surface'))
         api.registerTool(toAgentTool(buildClearSurface(wsService), 'Clear Surface'))
         api.registerTool(toAgentTool(buildRequestConnection(storage, wsService), 'Request Connection'))

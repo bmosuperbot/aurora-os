@@ -14,6 +14,12 @@ dist/
 *.db-wal
 .signal
 
+# Python venv
+.venv/
+
+# Test screenshots
+test-screenshots/
+
 # Environment
 .env
 .env.*
@@ -22,6 +28,7 @@ dist/
 
 # Repo-owned OpenClaw Docker runtime state
 aura-pulse/.openclaw-docker/
+aura-pulse/.openclaw-state
 
 # macOS
 .DS_Store

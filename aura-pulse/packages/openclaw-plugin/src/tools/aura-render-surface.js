@@ -240,7 +240,7 @@ function normalizeA2UIMessages(rawMessages) {
 export function buildRenderSurface(wsService) {
     return {
         name: 'aura_render_surface',
-        description: 'Render a general-purpose interface in Aura Pulse without creating a contract. Use this for informative or exploratory UI such as sales tables, dashboards, charts, drill-down lists, and agent-generated visual summaries. The a2ui_messages field must be canonical A2UI server-to-client messages for the same surface_id, using real protocol objects like { surfaceUpdate: { ... } }, { dataModelUpdate: { ... } }, and { beginRendering: { ... } }. Pass a2ui_messages only as a real array value in tool arguments, for example [{ surfaceUpdate: { ... } }, { dataModelUpdate: { ... } }, { beginRendering: { ... } }]. Do not quote the array. Do not pass a JSON string like "[{...}]". Do not use wrapper shapes like { type: "a2ui.surfaceUpdate", data: { ... } }. Do not use this tool for approvals, deterministic workflow steps, or anything that should be tracked as a contract.',
+        description: 'ADVANCED: Low-level A2UI renderer. PREFER aura_surface instead for all common surfaces (dashboards, tables, metrics, summaries). Only use aura_render_surface when you need custom A2UI components not available in aura_surface sections. Requires hand-crafted canonical A2UI message arrays.',
         parameters: Type.Object({
             surface_id: Type.String({ description: 'Stable A2UI surface id, e.g. sales-last-week or inbox-summary' }),
             title: Type.Optional(Type.String({ description: 'Short title shown above the rendered interface' })),

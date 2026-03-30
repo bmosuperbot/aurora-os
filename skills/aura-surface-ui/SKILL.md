@@ -1,268 +1,94 @@
 ---
 name: aura-surface-ui
-description: Render structured Aura Pulse interfaces with aura_render_surface, Aura custom components, and valid A2UI JSON. Use when asked to show tables, KPI tiles, dashboards, inbox summaries, sales views, text-plus-button panels, or interactive business UIs in Pulse instead of plain chat. Also use when asked to produce or validate surfaceUpdate/dataModelUpdate/beginRendering JSON, fix malformed aura_render_surface payloads, or wire button actions back into the OpenClaw kernel.
+description: Show information in Aura Pulse as a structured interface. Use when asked to display tables, KPI tiles, dashboards, summaries, sales views, inbox overviews, or any business data in Pulse instead of plain chat. Also use when an owner asks a question that warrants a visual answer, when a contract completes and a summary panel would help, or when the agent wants to offer an interactive action button to the owner.
 ---
 
 # Aura Surface UI
 
 Use this skill when the agent should present information in Aura Pulse as structured UI instead of a text-only reply.
 
-## Critical Contract
+## Primary Tool: aura_surface
 
-- When reading this skill or `references/components.md`, use the host `read` tool on the OpenClaw workspace path. Do not use `aura_fs_read`, `aura_fs_list`, or `aura_fs_search` for workspace skills, `AGENTS.md`, `HEARTBEAT.md`, or other files under `/home/node/.openclaw/workspace`.
-- `aura_render_surface.a2ui_messages` must be an array.
-- For a normal Aura Pulse render, send the standard trio in this order:
-   1. `surfaceUpdate`
-   2. `dataModelUpdate`
-   3. `beginRendering`
-- Each entry in `a2ui_messages` must be the real protocol object itself, such as `{ "surfaceUpdate": { ... } }`. Do not wrap messages in `{ "a2uiType": "surfaceUpdate", "data": { ... } }`.
-- `surfaceUpdate.components` must be an array of objects shaped like `{ "id": "...", "component": { ... } }`.
-- Component props must use canonical names such as `text`, `label`, `title`, `columns`, `rows`, and `actionId`. For built-in A2UI `Text`, use `text: { "literalString": "..." }`, not `value`. Do not invent variants like `valueText`, `labelText`, or `titleText`.
-- Do not send ad hoc shapes such as `[{"type":"message","value":"...","actionLabel":"..."}]` unless you are intentionally relying on the frontend fallback path.
-- Do not send `components` as an object map when you can avoid it. Prefer the canonical array shape.
-- If you include an Aura `ActionButton`, always give it a stable `actionId`.
-- If you only need one line of text and one button, still use valid A2UI unless the caller explicitly wants a fallback-only test.
-- `beginRendering` must include `surfaceId`, `root`, and `catalogId`. Do not replace it with `{ "a2uiType": "beginRendering", "state": "success" }`.
+Call `aura_surface` to show business information in Pulse. Describe what you want to display using the `sections` array. The tool handles all Pulse formatting automatically — you never write wire-format JSON.
 
-## Workflow
+### Section Types
 
-1. Choose a stable `surface_id` that describes the view, such as `sales-last-week` or `inbox-summary`.
-2. Build one A2UI surface with the standard message trio:
-   - `surfaceUpdate`
-   - `dataModelUpdate`
-   - `beginRendering`
-3. Prefer Aura business components for business data:
-   - `MetricGrid` for KPI tiles
-   - `DataTable` for rows and columns
-   - `ActionButton` for direct owner actions
-4. Call `aura_render_surface` with:
-   - the same `surface_id`
-   - optional `title`, `summary`, `voice_line`
-   - `a2ui_messages`
-5. If the owner acts on the rendered UI, Aura Pulse sends the action back to the kernel as a surface action event. Treat it as a direct owner interaction and update the surface or continue the task.
-6. When the view is obsolete, call `aura_clear_surface` with the same `surface_id`.
+Each entry in `sections` must have a `type` field. Available types:
 
-## Minimal Valid Example
+| type | Use for |
+|---|---|
+| `heading` | A title or section label. Requires `text`. |
+| `text` | A paragraph or body line. Requires `text`. |
+| `metrics` | KPI tiles. Requires `items` array with `id`, `label`, `value`. Optional `title`, `detail`, `tone`. |
+| `table` | A data grid. Requires `columns` (each with `id`, `label`) and `rows` (objects with matching keys plus `id`). Optional `title`, `caption`. |
+| `action` | A button. Requires `label` and `action_id`. Optional `style` (`primary` or `secondary`) and `context` (small primitive payload). |
 
-Use this exact structure for a simple text-plus-button interface:
-
-```json
-[
-   {
-      "surfaceUpdate": {
-         "surfaceId": "pulse-live-test",
-         "components": [
-            {
-               "id": "root",
-               "component": {
-                  "Column": {
-                     "children": {
-                        "explicitList": ["headline", "cta"]
-                     }
-                  }
-               }
-            },
-            {
-               "id": "headline",
-               "component": {
-                  "Text": {
-                     "text": {
-                        "literalString": "Pulse to agent round trip works."
-                     }
-                  }
-               }
-            },
-            {
-               "id": "cta",
-               "component": {
-                  "ActionButton": {
-                     "label": "Acknowledge",
-                     "actionId": "acknowledge_test",
-                     "style": "primary"
-                  }
-               }
-            }
-         ]
-      }
-   },
-   {
-      "dataModelUpdate": {
-         "surfaceId": "pulse-live-test",
-         "contents": []
-      }
-   },
-   {
-      "beginRendering": {
-         "surfaceId": "pulse-live-test",
-         "root": "root",
-         "catalogId": "https://aura-os.ai/a2ui/v1/aura-catalog.json"
-      }
-   }
-]
-```
-
-## Canonical Complex Planning Example
-
-Use this exact structure for a richer planning panel with metrics, a table, and one action button:
-
-```json
-[
-   {
-      "surfaceUpdate": {
-         "surfaceId": "grant-radar-skill-test",
-         "components": [
-            {
-               "id": "root",
-               "component": {
-                  "Column": {
-                     "children": {
-                        "explicitList": ["headline", "metrics", "table", "action"]
-                     }
-                  }
-               }
-            },
-            {
-               "id": "headline",
-               "component": {
-                  "Text": {
-                     "text": {
-                        "literalString": "Tonight's grant search plan"
-                     }
-                  }
-               }
-            },
-            {
-               "id": "metrics",
-               "component": {
-                  "MetricGrid": {
-                     "title": "Overview",
-                     "metrics": [
-                        { "id": "opportunities", "label": "Opportunities", "value": 3, "detail": "3 active matches", "tone": "positive" },
-                        { "id": "deadlines", "label": "Deadlines", "value": 2, "detail": "2 due this week", "tone": "warning" },
-                        { "id": "confidence", "label": "Confidence", "value": "78%", "detail": "Based on current filters" }
-                     ]
-                  }
-               }
-            },
-            {
-               "id": "table",
-               "component": {
-                  "DataTable": {
-                     "title": "Priority grants",
-                     "columns": [
-                        { "id": "program", "label": "Program" },
-                        { "id": "deadline", "label": "Deadline" },
-                        { "id": "fit", "label": "Fit" }
-                     ],
-                     "rows": [
-                        { "id": "row-1", "program": "City Arts Fund", "deadline": "Apr 3", "fit": "High" },
-                        { "id": "row-2", "program": "Regional Maker Grant", "deadline": "Apr 6", "fit": "Medium" }
-                     ]
-                  }
-               }
-            },
-            {
-               "id": "action",
-               "component": {
-                  "ActionButton": {
-                     "label": "Open shortlist",
-                     "actionId": "open_shortlist",
-                     "style": "primary"
-                  }
-               }
-            }
-         ]
-      }
-   },
-   {
-      "dataModelUpdate": {
-         "surfaceId": "grant-radar-skill-test",
-         "contents": []
-      }
-   },
-   {
-      "beginRendering": {
-         "surfaceId": "grant-radar-skill-test",
-         "root": "root",
-         "catalogId": "https://aura-os.ai/a2ui/v1/aura-catalog.json"
-      }
-   }
-]
-```
-
-## Rules
-
-- Use `aura_render_surface` for informative or exploratory UI only. Do not use it for approvals or deterministic workflow state that should be tracked as a contract.
-- Keep one conceptual screen per `surface_id`.
-- Use a `Column` root for most business views.
-- Keep labels short and human-readable.
-- For `DataTable`, preformat display strings yourself. Do not rely on client-side formatting.
-- For `ActionButton`, pass lightweight primitive context only when possible: strings, numbers, booleans.
-- If a button or action changes the screen, render a replacement surface instead of narrating the change only in text.
-
-## Invalid Shapes
-
-Do not send these when you intend a normal Aura Pulse render:
+### Minimal Example
 
 ```json
 {
-   "surfaceUpdate": {
-      "surfaceId": "bad-example",
-      "components": {
-         "root": {
-            "Text": {
-               "value": "Wrong shape"
-            }
-         }
-      }
-   }
+  "surface_id": "sales-last-week",
+  "title": "Sales Last Week",
+  "sections": [
+    { "type": "heading", "text": "Sales performance for last week" },
+    {
+      "type": "metrics",
+      "title": "Overview",
+      "items": [
+        { "id": "revenue", "label": "Revenue", "value": "$482", "detail": "+12% vs prior week", "tone": "positive" },
+        { "id": "orders", "label": "Orders", "value": 3 }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Closed orders",
+      "caption": "Newest first",
+      "columns": [
+        { "id": "order", "label": "Order" },
+        { "id": "buyer", "label": "Buyer" },
+        { "id": "gross", "label": "Gross", "align": "right" }
+      ],
+      "rows": [
+        { "id": "r1", "order": "A-104", "buyer": "Alex", "gross": "$182" },
+        { "id": "r2", "order": "A-103", "buyer": "Mina", "gross": "$160" }
+      ]
+    },
+    { "type": "action", "label": "Inspect A-104", "action_id": "inspect_order", "style": "secondary", "context": { "orderId": "A-104" } }
+  ]
 }
 ```
 
-```json
-[
-   {
-      "type": "message",
-      "value": "This is not valid A2UI",
-      "actionLabel": "Fallback only"
-   }
-]
-```
+### Workflow
 
-```json
-[
-   {
-      "a2uiType": "surfaceUpdate",
-      "data": {
-         "components": {
-            "headline": {
-               "type": "Text",
-               "valueText": "Wrong wrapper and wrong prop names"
-            }
-         }
-      }
-   },
-   {
-      "a2uiType": "beginRendering",
-      "state": "success"
-   }
-]
-```
+1. Choose a stable `surface_id` that describes the view.
+2. Build a `sections` array describing what the owner should see.
+3. Call `aura_surface` with the `surface_id` and `sections`.
+4. **Once aura_surface succeeds, you are DONE.** Reply to the owner with a brief summary of what you displayed (e.g. "Here's your sales summary — showing revenue, orders, and recent transactions."). Do NOT call any other tools after a successful surface render unless the owner explicitly asks for more.
+5. When the owner clicks an action button, Pulse sends the `action_id` and `context` back as a surface action event. Handle it and call `aura_surface` again to update the view if needed.
+6. When the view is no longer needed, call `aura_clear_surface` with the same `surface_id`.
 
-## Component Set
+### Rules
 
-- Aura custom components:
-  - `MetricGrid`
-  - `DataTable`
-  - `ActionButton`
-- Useful stock A2UI components:
-  - `Column`
-  - `Row`
-  - `Text`
-  - `Button`
-  - `Card`
-  - `List`
-  - `Tabs`
-  - `Divider`
+- **After a successful `aura_surface` call, STOP. Reply to the owner and wait.** Do not read files, run commands, call other tools, or do follow-up work unless the owner asks.
+- Use `aura_surface` for informative or exploratory UI. Do not use it for approvals or tracked workflow state — those belong in contracts.
+- Keep one logical view per `surface_id`. Update it by calling `aura_surface` again with the same id.
+- Use a `heading` section for the top-level title so the panel has visual structure.
+- Keep `action` context small: identifiers and short primitives only.
+- For `table` rows, pre-format currency and dates yourself (e.g. `"$182"` not `182`). Do not rely on client-side formatting.
+- Read the `references/components.md` file only if you need the advanced `aura_render_surface` path.
 
-Read [references/components.md](references/components.md) for exact JSON shapes and a complete example payload.
+---
+
+## Advanced Tool: aura_render_surface
+
+Use `aura_render_surface` only when `aura_surface` cannot express what you need — for example, a layout that requires custom A2UI components not available as section types.
+
+When you use `aura_render_surface`, read `references/components.md` first for exact JSON shapes.
+
+Critical contract for `aura_render_surface`:
+- `a2ui_messages` must be a native array value — not a quoted JSON string.
+- Send the standard trio in order: `surfaceUpdate` → `dataModelUpdate` → `beginRendering`.
+- Each entry must be a real protocol object like `{ "surfaceUpdate": { ... } }`.
+- Do not use wrapper shapes like `{ "type": "a2ui.surfaceUpdate", "data": { ... } }`.
+- Use `Text.text: { "literalString": "..." }`, not `Text.value`.
+- `beginRendering` must include `surfaceId`, `root`, and `catalogId`.
