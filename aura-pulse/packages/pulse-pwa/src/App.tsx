@@ -106,7 +106,7 @@ export function App({ wsClient = pulseWSClient }: AppProps) {
     }
 
     if (mode === "workspace") {
-      return kernelSurfaces.length > 0 ? <WorkspaceSurface surfaces={kernelSurfaces} /> : <SilentSurface />;
+      return <WorkspaceSurface surfaces={kernelSurfaces} />;
     }
 
     if (!contract) return <SilentSurface />;

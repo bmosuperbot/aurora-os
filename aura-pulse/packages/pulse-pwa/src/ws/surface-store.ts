@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type {
   BaseContract,
   ConnectorCard,
@@ -92,10 +93,14 @@ export interface SurfaceState {
   historyOpen: boolean;
   briefOpen: boolean;
   wsStatus: "connected" | "reconnecting" | "disconnected";
+  agentBusy: boolean;
+  ttsEnabled: boolean;
   transportSend: (msg: SurfaceMessage) => void;
 
   // Actions
   handleMessage: (msg: RuntimeMessage) => void;
+  setAgentBusy: (busy: boolean) => void;
+  setTtsEnabled: (enabled: boolean) => void;
   sendMessage: (msg: SurfaceMessage) => void;
   configureTransport: (sender: (msg: SurfaceMessage) => void) => void;
   setWsStatus: (status: "connected" | "reconnecting" | "disconnected") => void;
@@ -107,11 +112,12 @@ export interface SurfaceState {
   closeArtifactReview: () => void;
   dismissCompletion: () => void;
   dismissOnboarding: () => void;
+  deleteKernelSurface: (surfaceId: string) => void;
 }
 
 // ── Store implementation ──────────────────────────────────────────────────────
 
-export const useSurfaceStore = create<SurfaceState>((set, get) => ({
+export const useSurfaceStore = create<SurfaceState>()(persist((set, get) => ({
   mode: "silent",
   contract: null,
   a2uiMessages: [],
@@ -126,6 +132,8 @@ export const useSurfaceStore = create<SurfaceState>((set, get) => ({
   historyOpen: false,
   briefOpen: false,
   wsStatus: "disconnected",
+  agentBusy: false,
+  ttsEnabled: false,
   transportSend: defaultTransportSend,
 
   handleMessage(msg) {
@@ -158,6 +166,7 @@ export const useSurfaceStore = create<SurfaceState>((set, get) => ({
             ...msg.surface,
             receivedAt: Date.now(),
           }),
+          agentBusy: false,
           ...(shouldPromote ? { mode: "workspace" as const, completionSurface: null } : {}),
         });
         break;
@@ -359,4 +368,38 @@ export const useSurfaceStore = create<SurfaceState>((set, get) => ({
   },
 
   dismissOnboarding: () => set({ onboardingOpen: false }),
+
+  setAgentBusy: (busy: boolean) => set({ agentBusy: busy }),
+  setTtsEnabled: (enabled: boolean) => set({ ttsEnabled: enabled }),
+
+  deleteKernelSurface: (surfaceId: string) => {
+    set((state) => {
+      const remaining = state.kernelSurfaces.filter((s) => s.surfaceId !== surfaceId);
+      return {
+        kernelSurfaces: remaining,
+        ...(state.mode === "workspace" && remaining.length === 0 ? { mode: "silent" as const } : {}),
+      };
+    });
+  },
+}), {
+  name: "aura.surface-store.v1",
+  storage: {
+    getItem: (name) => {
+      const raw = sessionStorage.getItem(name);
+      return raw ? JSON.parse(raw) : null;
+    },
+    setItem: (name, value) => {
+      sessionStorage.setItem(name, JSON.stringify(value));
+    },
+    removeItem: (name) => {
+      sessionStorage.removeItem(name);
+    },
+  },
+  partialize: (state) => ({
+    mode: state.mode,
+    contract: state.contract,
+    a2uiMessages: state.a2uiMessages,
+    completionSurface: state.completionSurface,
+    kernelSurfaces: state.kernelSurfaces,
+  } as unknown as SurfaceState),
 }));

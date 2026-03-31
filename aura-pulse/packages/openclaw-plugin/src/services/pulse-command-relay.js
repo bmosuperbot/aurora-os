@@ -30,6 +30,10 @@ import { resolveMainSessionKey } from './contract-executor.js'
  * @returns {string}
  */
 function buildPulseCommandMessage(params) {
+    // Slash commands (e.g. /new, /reset, /clear) are sent raw without preamble
+    if (params.text.startsWith('/')) {
+        return params.text
+    }
     return [
         'Aura Pulse owner command received.',
         '',

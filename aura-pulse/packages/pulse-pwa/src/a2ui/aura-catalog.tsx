@@ -5,7 +5,7 @@
 
 import { ComponentRegistry, initializeDefaultCatalog, useA2UIComponent } from "@a2ui/react";
 import type { A2UIComponentProps, AnyComponentNode } from "@a2ui/react";
-import React from "react";
+import React, { useState } from "react";
 
 const artifactDrafts = new Map<string, Record<string, unknown>>();
 const artifactDraftListeners = new Map<string, Set<(data: Record<string, unknown>) => void>>();
@@ -141,6 +141,10 @@ function getSpeechRecognitionCtor(): BrowserSpeechRecognitionConstructor | null 
 
 function AuraActionButton({ node, surfaceId }: A2UIComponentProps<AnyComponentNode>) {
   const { sendAction } = useA2UIComponent(node, surfaceId);
+  // Track which node object was clicked. If the surface updates and A2UI creates
+  // a new node object (new surface version), sentNode !== node → button auto-resets.
+  const [sentNode, setSentNode] = useState<object | null>(null);
+  const sent = sentNode === (node as object);
   const p = nodeProps(node);
   const actionId = String(p.actionId ?? "");
   const label = String(p.label ?? "Action");
@@ -150,18 +154,61 @@ function AuraActionButton({ node, surfaceId }: A2UIComponentProps<AnyComponentNo
     : null;
   return (
     <button
-      className={`aura-btn aura-btn--${style}`}
-      onClick={() => sendAction({
-        name: actionId,
-        ...(actionContext ? { context: toActionContextEntries(actionContext) } : {}),
-      } as Parameters<typeof sendAction>[0])}
+      className={`aura-btn aura-btn--${style}${sent ? " aura-btn--sent" : ""}`}
+      disabled={sent}
+      onClick={() => {
+        sendAction({
+          name: actionId,
+          ...(actionContext ? { context: toActionContextEntries(actionContext) } : {}),
+        } as Parameters<typeof sendAction>[0]);
+        setSentNode(node as object);
+      }}
     >
-      {label}
+      {sent ? `${label} ✓` : label}
     </button>
   );
 }
 
-type MetricTone = "default" | "positive" | "warning" | "critical";
+function DraftEditor({ node, surfaceId }: A2UIComponentProps<AnyComponentNode>) {
+  const { sendAction } = useA2UIComponent(node, surfaceId);
+  const [sentNode, setSentNode] = useState<object | null>(null);
+  const sent = sentNode === (node as object);
+  const p = nodeProps(node);
+  const defaultValue = String(p.defaultValue ?? "");
+  const submitLabel = String(p.submitLabel ?? "Send revised draft");
+  const actionId = String(p.actionId ?? "submit-draft");
+  const actionContext = typeof p.actionContext === "object" && p.actionContext !== null
+    ? p.actionContext as Record<string, PrimitiveActionValue>
+    : {};
+  const [text, setText] = useState(defaultValue);
+  return (
+    <div className="aura-draft-editor">
+      <textarea
+        className="aura-draft-editor__textarea"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={6}
+        disabled={sent}
+        spellCheck
+      />
+      <button
+        className={`aura-btn aura-btn--primary aura-draft-editor__submit${sent ? " aura-btn--sent" : ""}`}
+        disabled={sent}
+        onClick={() => {
+          sendAction({
+            name: actionId,
+            context: toActionContextEntries({ ...actionContext, draftText: text }),
+          } as Parameters<typeof sendAction>[0]);
+          setSentNode(node as object);
+        }}
+      >
+        {sent ? `${submitLabel} ✓` : submitLabel}
+      </button>
+    </div>
+  );
+}
+
+type MetricTone = "default" | "positive" | "negative" | "warning" | "info" | "critical";
 
 interface MetricGridItem {
   id: string;
@@ -206,6 +253,8 @@ interface DataTableRow {
   [key: string]: unknown;
 }
 
+const DEFAULT_VISIBLE_ROWS = 3;
+
 function DataTable({ node }: A2UIComponentProps<AnyComponentNode>) {
   const p = nodeProps(node);
   const title = typeof p.title === "string" ? p.title : "";
@@ -213,6 +262,10 @@ function DataTable({ node }: A2UIComponentProps<AnyComponentNode>) {
   const emptyText = typeof p.emptyText === "string" ? p.emptyText : "No rows available.";
   const columns = Array.isArray(p.columns) ? p.columns as DataTableColumn[] : [];
   const rows = Array.isArray(p.rows) ? p.rows as DataTableRow[] : [];
+  const [expanded, setExpanded] = React.useState(false);
+
+  const visibleRows = expanded ? rows : rows.slice(0, DEFAULT_VISIBLE_ROWS);
+  const hiddenCount = rows.length - DEFAULT_VISIBLE_ROWS;
 
   return (
     <section className="aura-data-table" aria-label={title || "Data table"}>
@@ -221,30 +274,33 @@ function DataTable({ node }: A2UIComponentProps<AnyComponentNode>) {
       {rows.length === 0 ? (
         <div className="aura-data-table__empty">{emptyText}</div>
       ) : (
-        <div className="aura-data-table__scroller">
-          <table>
-            <thead>
-              <tr>
-                {columns.map((column) => (
-                  <th key={column.id} className={`aura-data-table__cell aura-data-table__cell--${column.align ?? "left"}`}>
-                    {column.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, index) => (
-                <tr key={typeof row.id === "string" ? row.id : `row-${index}`}>
-                  {columns.map((column) => (
-                    <td key={column.id} className={`aura-data-table__cell aura-data-table__cell--${column.align ?? "left"}`}>
-                      {String(row[column.id] ?? "")}
-                    </td>
-                  ))}
-                </tr>
+        <>
+          <div className="aura-data-table__rows">
+            {/* Header row */}
+            <div className="aura-data-table__row aura-data-table__row--header" style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr)` }}>
+              {columns.map((column) => (
+                <span key={column.id} className="aura-data-table__cell-label">{column.label}</span>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+            {visibleRows.map((row, index) => (
+              <div key={typeof row.id === "string" ? row.id : `row-${index}`} className="aura-data-table__row" style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr)` }}>
+                {columns.map((column) => (
+                  <span key={column.id} className="aura-data-table__cell-value">{String(row[column.id] ?? "")}</span>
+                ))}
+              </div>
+            ))}
+          </div>
+          {!expanded && hiddenCount > 0 && (
+            <button type="button" className="aura-data-table__show-more" onClick={() => setExpanded(true)}>
+              Show {hiddenCount} more...
+            </button>
+          )}
+          {expanded && hiddenCount > 0 && (
+            <button type="button" className="aura-data-table__show-more" onClick={() => setExpanded(false)}>
+              Show less
+            </button>
+          )}
+        </>
       )}
     </section>
   );
@@ -479,6 +535,7 @@ export function registerAuraCatalog(): void {
   const registry = ComponentRegistry.getInstance();
 
   registry.register<AnyComponentNode>("ActionButton", { component: AuraActionButton });
+  registry.register<AnyComponentNode>("DraftEditor", { component: DraftEditor });
   registry.register<AnyComponentNode>("ContractMetaRow", { component: ContractMetaRow });
   registry.register<AnyComponentNode>("ArtifactTextField", { component: AuraArtifactTextField });
   registry.register<AnyComponentNode>("DecisionChips", { component: DecisionChips });

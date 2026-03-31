@@ -26,8 +26,9 @@ test-screenshots/
 !.env.example
 !.env.*.example
 
-# Repo-owned OpenClaw Docker runtime state
+# OpenClaw Docker runtime — ignored entirely, deal with versioning later
 aura-pulse/.openclaw-docker/
+# Unused local runtime (use Docker)
 aura-pulse/.openclaw-state
 
 # macOS

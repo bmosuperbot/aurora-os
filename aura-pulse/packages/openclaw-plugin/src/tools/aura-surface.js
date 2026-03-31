@@ -17,7 +17,9 @@ const MetricItemSchema = Type.Object({
     tone: Type.Optional(Type.Union([
         Type.Literal('default'),
         Type.Literal('positive'),
+        Type.Literal('negative'),
         Type.Literal('warning'),
+        Type.Literal('info'),
         Type.Literal('critical'),
     ], { description: 'Colour tone for the tile' })),
 })
