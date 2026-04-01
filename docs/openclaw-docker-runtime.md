@@ -124,8 +124,8 @@ From `aura-pulse/`:
 ```bash
 docker compose -f docker-compose.openclaw.yml ps
 docker compose -f docker-compose.openclaw.yml logs -f openclaw-gateway
-docker compose -f docker-compose.openclaw.yml run --rm openclaw-cli dashboard --no-open
-docker compose -f docker-compose.openclaw.yml run --rm -T openclaw-cli models status
+docker compose -f docker-compose.openclaw.yml exec -T openclaw-gateway openclaw dashboard --no-open
+docker compose -f docker-compose.openclaw.yml exec -T openclaw-gateway openclaw models status
 docker compose -f docker-compose.openclaw.yml stop openclaw-gateway
 sh ./scripts/openclaw-docker-up.sh
 ```
@@ -170,16 +170,16 @@ This bundle now includes:
 - vendored `artist-reseller` package assets under `vendor/artist-reseller/`
 - vendored `contract-runtime` package assets under `vendor/contract-runtime/`
 
-The repo-owned Docker wrapper syncs the freshly built standalone bundle into the isolated workspace and configures OpenClaw to load Aura from:
+The repo-owned Docker wrapper syncs the freshly built standalone bundle into the isolated global OpenClaw extensions directory and configures OpenClaw to load Aura from:
 
 ```text
-/home/node/.openclaw/workspace/openclaw-plugin-standalone
+/home/node/.openclaw/extensions/aura-pulse
 ```
 
 The startup wrapper refreshes that path from the current checkout before `docker compose up`:
 
 ```text
-$OPENCLAW_WORKSPACE_DIR/openclaw-plugin-standalone
+$OPENCLAW_CONFIG_DIR/extensions/aura-pulse
 ```
 
 That keeps the repo-owned runtime self-contained, avoids duplicate plugin registration, and no longer requires a separate upstream repo checkout just to host Docker Compose.

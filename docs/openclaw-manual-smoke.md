@@ -18,7 +18,7 @@ pnpm --filter @aura/aura-pulse demo:artist
 What that preflight confirms:
 
 - OpenClaw is healthy on `http://127.0.0.1:28789`
-- Aura is loading from `/home/node/.openclaw/workspace/openclaw-plugin-standalone`
+- Aura is loading from `/home/node/.openclaw/extensions/aura-pulse`
 - the isolated runtime has the Gmail preset configured for `studio-ops@gmail.com`
 - the Aura connector table shows Gmail as `active`
 
@@ -40,7 +40,7 @@ The validated isolated runtime used in this repo lives at:
 The current plugin load path is:
 
 ```text
-/home/node/.openclaw/workspace/openclaw-plugin-standalone
+/home/node/.openclaw/extensions/aura-pulse
 ```
 
 That is the path the next agent should assume unless it is explicitly changed.

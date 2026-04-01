@@ -71,12 +71,23 @@ const ActionSection = Type.Object({
     }),
 })
 
+const EditorSection = Type.Object({
+    type: Type.Literal('editor'),
+    defaultValue: Type.String({ description: 'Editable draft text shown in the textarea' }),
+    submitLabel: Type.String({ description: 'Button label used to submit the edited draft' }),
+    action_id: Type.String({ description: 'Stable action id sent back when the owner submits the draft, e.g. send_revised or notify_buyer' }),
+    context: Type.Record(Type.String(), Type.Union([Type.String(), Type.Number(), Type.Boolean()]), {
+        description: 'Relevant identifiers sent back with the edited draft. Keep these values small and primitive.',
+    }),
+})
+
 const SectionSchema = Type.Union([
     HeadingSection,
     TextSection,
     MetricsSection,
     TableSection,
     ActionSection,
+    EditorSection,
 ])
 
 // ---------------------------------------------------------------------------
@@ -146,6 +157,20 @@ function compileSection(section, index) {
                 : { action: section.action_id, label: section.label }
             btn.actionContext = ctx
             return { id, component: { ActionButton: btn } }
+        }
+
+        case 'editor': {
+            /** @type {Record<string, unknown>} */
+            const editor = {
+                defaultValue: section.defaultValue,
+                submitLabel: section.submitLabel,
+                actionId: section.action_id,
+            }
+            const ctx = (section.context && typeof section.context === 'object' && Object.keys(section.context).length > 0)
+                ? section.context
+                : { action: section.action_id, submitLabel: section.submitLabel }
+            editor.actionContext = ctx
+            return { id, component: { DraftEditor: editor } }
         }
 
         default:
@@ -265,7 +290,7 @@ function normalizeSections(raw) {
  * aura_surface — high-level Pulse surface tool for the primary agent.
  *
  * The model describes what to show using flat business-friendly fields
- * (headings, metric tiles, data tables, action buttons). The tool compiles
+ * (headings, metric tiles, data tables, action buttons, editable draft boxes). The tool compiles
  * those into canonical A2UI and pushes the surface to Pulse. The model never
  * writes raw A2UI JSON.
  *
@@ -277,14 +302,14 @@ function normalizeSections(raw) {
 export function buildSurface(wsService) {
     return {
         name: 'aura_surface',
-        description: 'Show information in Aura Pulse as a structured business interface. Use this to display dashboards, sales data, tables, metrics, or summaries with optional action buttons. Describe what you want to show using the sections array: heading, text, metrics, table, or action. The tool compiles your description into the correct Pulse format automatically. Use this for any informative or exploratory UI instead of aura_render_surface.',
+        description: 'Show information in Aura Pulse as a structured business interface. Use this to display dashboards, sales data, tables, metrics, summaries, or editable draft surfaces with action buttons. Describe what you want to show using the sections array: heading, text, metrics, table, action, or editor. voice_line is required. The tool compiles your description into the correct Pulse format automatically. Use this for common business UI instead of aura_render_surface.',
         parameters: Type.Object({
             surface_id: Type.String({
                 description: 'Stable id for this view, e.g. sales-last-week or inbox-summary. Use the same id to update a surface already shown.',
             }),
             title: Type.Optional(Type.String({ description: 'Short title shown above the panel' })),
             summary: Type.Optional(Type.String({ description: 'Brief explanatory text shown above the panel' })),
-            voice_line: Type.Optional(Type.String({ description: 'Optional voice narration spoken when the surface appears' })),
+            voice_line: Type.String({ description: 'Required voice narration spoken when the surface appears' }),
             surface_type: Type.Optional(Type.Union([
                 Type.Literal('workspace'),
                 Type.Literal('plan'),
@@ -302,7 +327,7 @@ export function buildSurface(wsService) {
             })),
             icon: Type.Optional(Type.String({ description: 'Short icon label shown on minimized panel chips, e.g. GR or INV' })),
             sections: Type.Array(SectionSchema, {
-                description: 'Ordered list of sections to display. Each section must have a "type" field: "heading" (+ "text"), "text" (+ "text"), "metrics" (+ "items" array), "table" (+ "columns" and "rows"), or "action" (+ "label" and "action_id").',
+                description: 'Ordered list of sections to display. Each section must have a "type" field: "heading" (+ "text"), "text" (+ "text"), "metrics" (+ "items" array), "table" (+ "columns" and "rows"), "action" (+ "label" and "action_id"), or "editor" (+ "defaultValue", "submitLabel", and "action_id").',
                 minItems: 1,
             }),
         }),
@@ -315,6 +340,9 @@ export function buildSurface(wsService) {
             try {
                 const surfaceId = /** @type {string} */ (params.surface_id)
                 const sections = /** @type {Array<Record<string, unknown>>} */ (normalizeSections(params.sections))
+                if (typeof params.voice_line !== 'string' || params.voice_line.trim().length === 0) {
+                    throw new Error('aura_surface.voice_line is required')
+                }
 
                 const a2uiMessages = buildA2UIMessages(surfaceId, sections)
 
@@ -322,7 +350,7 @@ export function buildSurface(wsService) {
                 const surface = { surfaceId, a2uiMessages }
                 if (typeof params.title === 'string') surface.title = params.title
                 if (typeof params.summary === 'string') surface.summary = params.summary
-                if (typeof params.voice_line === 'string') surface.voiceLine = params.voice_line
+                surface.voiceLine = params.voice_line
                 if (typeof params.surface_type === 'string') surface.surfaceType = /** @type {any} */ (params.surface_type)
                 if (typeof params.priority === 'string') surface.priority = /** @type {any} */ (params.priority)
                 if (typeof params.collaborative === 'boolean') surface.collaborative = params.collaborative

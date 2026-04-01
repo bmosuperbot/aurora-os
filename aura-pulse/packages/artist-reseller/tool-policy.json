@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "defaultAgentId": "studio-ops",
+  "pluginsAllow": [
+    "aura-pulse",
+    "openclaw-engram",
+    "lobster"
+  ],
+  "agents": {
+    "main": {
+      "allow": [
+        "read",
+        "edit",
+        "memory_search",
+        "memory_entities",
+        "lobster",
+        "aura_clear_surface"
+      ]
+    },
+    "studio-ops": {
+      "allow": [
+        "read",
+        "edit",
+        "agents_list",
+        "sessions_spawn",
+        "aura_surface",
+        "aura_surface_decision",
+        "aura_query_contracts",
+        "aura_query_connections",
+        "aura_request_connection",
+        "aura_query_listing",
+        "aura_complete_contract",
+        "aura_log_action",
+        "aura_fs_read",
+        "aura_fs_write",
+        "aura_fs_list",
+        "aura_fs_patch",
+        "aura_fs_archive",
+        "memory_search",
+        "memory_entities",
+        "lobster"
+      ]
+    },
+    "studio-ops-orchestrator": {
+      "allow": [
+        "agents_list",
+        "sessions_spawn",
+        "aura_fs_read",
+        "aura_fs_list",
+        "memory_search",
+        "lobster"
+      ]
+    },
+    "listing-drafter": {
+      "allow": [
+        "aura_fs_read",
+        "aura_fs_write"
+      ]
+    },
+    "offer-monitor": {
+      "allow": [
+        "memory_entities"
+      ]
+    },
+    "shipping-tracker": {
+      "allow": [
+        "aura_fs_write"
+      ]
+    },
+    "platform-monitor": {
+      "allow": [
+        "aura_fs_read",
+        "aura_fs_write",
+        "memory_search"
+      ]
+    },
+    "software-engineer": {
+      "allow": [
+        "read",
+        "write",
+        "edit",
+        "apply_patch",
+        "exec",
+        "process",
+        "aura_fs_read",
+        "aura_fs_write",
+        "aura_fs_list",
+        "aura_fs_search",
+        "lobster"
+      ]
+    }
+  }
+}

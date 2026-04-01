@@ -3,9 +3,9 @@
   "plugins": {
     "required": [
       {
-        "id": "engram",
-        "package": "@openclaw/engram",
-        "version": "2.1.0",
+        "id": "openclaw-engram",
+        "package": "@joshuaswarren/openclaw-engram",
+        "version": "latest",
         "tier": "free",
         "description": "Persistent memory and entity profiles for the agent."
       },
@@ -72,13 +72,11 @@
   ],
   "openclawConfig": {
     "plugins": {
-      "allow": ["aura-pulse", "engram", "lobster", "browser"],
+      "allow": ["aura-pulse", "openclaw-engram", "lobster"],
       "load": {
         "paths": ["~/.aura/packages/openclaw-plugin/index.js"]
       }
     },
-    "tools": {
-      "alsoAllow": ["lobster", "browser", "exec"]
-    }
+    "toolPolicyFile": "tool-policy.json"
   }
 }

@@ -1,12 +1,11 @@
 {
   "plugins": {
-    "allow": ["aura-pulse", "engram", "lobster", "browser"],
+    "allow": ["aura-pulse", "openclaw-engram", "lobster"],
     "load": {
       "paths": ["~/.aura/packages/openclaw-plugin/index.js"]
     },
     "entries": {
-      "browser": { "enabled": true },
-      "engram":  { "enabled": true },
+      "openclaw-engram":  { "enabled": true },
       "lobster": { "enabled": true }
     }
   },
@@ -23,7 +22,6 @@
       "security": "allowlist",
       "ask": "on-miss",
       "pathPrepend": ["/opt/homebrew/bin", "/usr/local/bin"]
-    },
-    "alsoAllow": ["lobster", "browser", "exec"]
+    }
   }
 }

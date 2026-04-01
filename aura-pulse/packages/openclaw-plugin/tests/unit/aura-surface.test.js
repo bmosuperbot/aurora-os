@@ -15,6 +15,7 @@ describe('buildSurface', () => {
         const result = await tool.execute('call-1', {
             surface_id: 'test-heading',
             title: 'Test',
+            voice_line: 'Heading ready',
             sections: [{ type: 'heading', text: 'Hello Pulse' }],
         })
 
@@ -39,6 +40,7 @@ describe('buildSurface', () => {
 
         await tool.execute('call-2', {
             surface_id: 'test-metrics',
+            voice_line: 'Metrics ready',
             sections: [{
                 type: 'metrics',
                 title: 'Overview',
@@ -62,6 +64,7 @@ describe('buildSurface', () => {
 
         await tool.execute('call-3', {
             surface_id: 'test-table',
+            voice_line: 'Table ready',
             sections: [{
                 type: 'table',
                 title: 'Orders',
@@ -90,6 +93,7 @@ describe('buildSurface', () => {
 
         await tool.execute('call-4', {
             surface_id: 'test-action',
+            voice_line: 'Action ready',
             sections: [{
                 type: 'action',
                 label: 'Inspect Order',
@@ -107,11 +111,35 @@ describe('buildSurface', () => {
         expect(btn.actionContext.orderId).toBe('A-104')
     })
 
+    it('compiles an editor section into a DraftEditor component', async () => {
+        const { tool, wsService } = makeTool()
+
+        await tool.execute('call-4b', {
+            surface_id: 'test-editor',
+            voice_line: 'Draft ready',
+            sections: [{
+                type: 'editor',
+                defaultValue: 'Hello buyer, thanks for the offer.',
+                submitLabel: 'Send revised draft',
+                action_id: 'send-revised',
+                context: { listingId: 'L-104', platform: 'Etsy' },
+            }],
+        })
+
+        const pushed = wsService.pushKernelSurface.mock.calls[0][0]
+        const editor = pushed.a2uiMessages[0].surfaceUpdate.components[1].component.DraftEditor
+        expect(editor.defaultValue).toBe('Hello buyer, thanks for the offer.')
+        expect(editor.submitLabel).toBe('Send revised draft')
+        expect(editor.actionId).toBe('send-revised')
+        expect(editor.actionContext.listingId).toBe('L-104')
+    })
+
     it('compiles a full multi-section surface with correct Column root', async () => {
         const { tool, wsService } = makeTool()
 
         await tool.execute('call-5', {
             surface_id: 'sales-last-week',
+            voice_line: 'Sales summary ready',
             sections: [
                 { type: 'heading', text: 'Sales Last Week' },
                 { type: 'metrics', items: [{ id: 'rev', label: 'Revenue', value: '$482' }] },
@@ -163,6 +191,7 @@ describe('buildSurface', () => {
 
         await tool.execute('call-str', {
             surface_id: 'string-normalize-test',
+            voice_line: 'String normalize ready',
             sections: JSON.stringify(sections),
         })
 
@@ -177,6 +206,7 @@ describe('buildSurface', () => {
 
         const result = await tool.execute('call-7', {
             surface_id: 'empty-test',
+            voice_line: 'Empty test',
             sections: [],
         })
         expect(result.isError).toBe(true)
@@ -188,6 +218,7 @@ describe('buildSurface', () => {
 
         const result = await tool.execute('call-8', {
             surface_id: 'unknown-test',
+            voice_line: 'Unknown test',
             sections: [{ type: 'chart', data: [] }],
         })
         expect(result.isError).toBe(true)
@@ -201,6 +232,7 @@ describe('buildSurface', () => {
 
         await tool.execute('call-mangle', {
             surface_id: 'mangle-test',
+            voice_line: 'Mangle test',
             sections: mangled,
         })
 
@@ -208,5 +240,17 @@ describe('buildSurface', () => {
         const pushed = wsService.pushKernelSurface.mock.calls[0][0]
         expect(pushed.surfaceId).toBe('mangle-test')
         expect(pushed.a2uiMessages).toHaveLength(3)
+    })
+
+    it('returns error result when voice_line is missing', async () => {
+        const { tool } = makeTool()
+
+        const result = await tool.execute('call-voice', {
+            surface_id: 'voice-required',
+            sections: [{ type: 'heading', text: 'Hello Pulse' }],
+        })
+
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).toMatch(/voice_line is required/)
     })
 })

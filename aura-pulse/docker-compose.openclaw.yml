@@ -7,8 +7,18 @@ services:
     image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:2026.3.24}
     init: true
     working_dir: /app
+    command:
+      - node
+      - openclaw.mjs
+      - gateway
+      - --allow-unconfigured
+      - --bind
+      - lan
+      - --port
+      - "18789"
     environment:
       HOME: /home/node
+      XDG_CONFIG_HOME: /home/node/.openclaw/.config
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
@@ -41,6 +51,9 @@ services:
     entrypoint:
       - node
       - dist/index.js
+    environment:
+      HOME: /home/node
+      XDG_CONFIG_HOME: /home/node/.openclaw/.config
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace

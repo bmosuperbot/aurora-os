@@ -1,13 +1,78 @@
 # Aura OS — Artist Reseller Package Manifest
-# Version: 1.0
+# Version: 3.0
+#
+# Single source of truth for the Expert Store installer. Declares domain,
+# identity, agents, connectors, heartbeat, cron jobs, and PARA structure.
+# The installer reads this manifest and calls OpenClaw CLI to configure.
+
+domain:
+  id: artist-reseller
+  name: Art & Vintage Resale
+  description: >
+    Sales and operations agent for art, vintage clothing, and handmade
+    resale businesses. Manages offers, listings, shipping, and inventory
+    across Poshmark, Etsy, Mercari, and eBay.
 
 identity:
   name: Studio Ops
-  # email provisioned during Gmail connector setup (gog auth login)
-  email: null
+  emoji: "🎨"
+  theme: Calm, organized, detail-oriented
+
+agents:
+  main:
+    id: studio-ops
+    default: true
+    description: >
+      Primary agent. Talks to the owner through Aurora Pulse. Surfaces
+      decisions, manages the morning brief, handles contract resolution.
+    workspace_files:
+      - AGENTS.md
+      - SOUL.md
+      - TOOLS.md
+      - IDENTITY.md
+      - USER.md
+      - BOOTSTRAP.md
+      - HEARTBEAT.md
+
+  orchestrator:
+    id: studio-ops-orchestrator
+    description: >
+      Coordinates worker sub-agents. Receives tasks from the primary agent,
+      spawns workers, synthesizes results. Never talks to the owner directly.
+    required_if_workers: true
+
+  workers:
+    - id: listing-drafter
+      name: Listing Drafter
+      description: Drafts marketplace listings from item descriptions and photos.
+      default: true
+      trigger: on-demand
+
+    - id: offer-monitor
+      name: Offer Monitor
+      description: Monitors inbox for marketplace offer emails and parses them into structured data.
+      default: true
+      trigger: scheduled
+
+    - id: shipping-tracker
+      name: Shipping Tracker
+      description: Tracks shipments across carriers and flags delays for buyer notification.
+      default: false
+      trigger: on-demand
+
+    - id: platform-monitor
+      name: Platform Monitor
+      description: Monitors inventory levels and platform metrics. Generates low-stock alerts.
+      default: false
+      trigger: scheduled
+
+    - id: software-engineer
+      name: Software Engineer
+      description: Builds custom scripts, tools, and integrations on demand. Available to all packages.
+      default: true
+      trigger: on-demand
 
 connectors:
-  # openclaw-channel connectors — OpenClaw manages auth
   gmail:
     source: openclaw-channel
     required: true
@@ -27,7 +92,6 @@ connectors:
     capability_without: Cannot access project documents.
     capability_with: Can read and write reports and listing drafts in Drive.
 
-  # aura-connector connectors — Aura holds the API key
   etsy:
     source: aura-connector
     required: false
@@ -35,18 +99,89 @@ connectors:
     capability_without: Cannot verify live Etsy listing prices.
     capability_with: Can look up current asking price when an offer arrives.
 
-apps:
-  # aura-app entries added by agent at deploy time (Phase 5+)
-  # managed_by: 'pm2' | 'docker'  -- agent detects via `which pm2` / `docker info`
-  # See apps/posh-pusher/ for scaffold templates
+heartbeat:
+  every: "30m"
+  active_hours:
+    start: "08:00"
+    end: "22:00"
+  tasks:
+    - Check inbox for new offer emails
+    - Check for shipping status updates on active orders
+    - Flag contracts approaching TTL expiry
+
+crons:
+  - id: morning-brief
+    name: Morning Brief
+    schedule: "0 7 * * *"
+    default: true
+    session: isolated
+    prompt: >
+      Compile a morning brief. Check pending contracts via
+      aura_query_contracts. Read areas/inventory/ for stock levels. Query
+      memory_search for overnight activity and recent decisions. Surface via
+      aura_surface with surface_type "brief" and icon "MB". Include
+      pending decisions count, overnight activity table, and today's
+      deadlines.
+
+  - id: weekly-sales
+    name: Weekly Sales Summary
+    schedule: "0 17 * * 5"
+    default: false
+    session: isolated
+    prompt: >
+      Compile a weekly sales summary. Query memory_search for sales data from
+      the past 7 days. Break down revenue by platform. Surface via
+      aura_surface with surface_type "monitor" and icon "SS".
 
 plugins:
-  # managed via aurora-registry.json — not duplicated here
-  registry: aurora-registry.json
+  required:
+    - id: openclaw-engram
+      install: "@joshuaswarren/openclaw-engram --pin"
+      description: >
+        Persistent memory and entity profiles. Replaces default OpenClaw
+        memory. Requires model source config (local LLM or gateway).
+      slot: memory
+      config:
+        searchBackend: qmd
+        captureMode: implicit
+        localLlmEnabled: true
+        lcmEnabled: true
+      verify:
+        - openclaw engram setup --json
+        - openclaw engram doctor --json
+    - id: aura-pulse
+      install: local
+      path: ../../openclaw-plugin
+      description: Aurora contract, surface, and filesystem tools.
+  optional:
+    - id: lobster
+      install: bundled
+      description: Multi-step browser automation pipelines.
+
+skills:
+  - id: aura-surface-ui
+    scope: global
+    path: skills/aura-surface-ui
+    description: Shared Aura Pulse UI skill for structured `aura_surface` views.
+
+config:
+  plugins.allow:
+    - aura-pulse
+    - openclaw-engram
+    - lobster
+  plugins.slots.memory: openclaw-engram
+  tool_policy_file: tool-policy.json
+
+para:
+  projects:
+    - builds
+  areas:
+    - inventory
+    - buyer-patterns
+  resources:
+    - platform-policies
 
 security:
-  # Phase 5: openclaw.json enforcement details
-  # See openclaw.json.template for the full policy structure
   note: >
     openclaw.json.template ships conservative defaults. Review before going
     to production. Key levers: plugins.allow, tools.deny, exec.security,

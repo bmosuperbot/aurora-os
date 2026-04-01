@@ -177,7 +177,9 @@ Use this when you need the simplest interactive Pulse surface that still follows
   "id": "headline",
   "component": {
     "Text": {
-      "value": "Hello"
+      "text": {
+        "literalString": "Hello"
+      }
     }
   }
 }
@@ -185,22 +187,6 @@ Use this when you need the simplest interactive Pulse surface that still follows
 
 - `dataModelUpdate.contents` should usually be an empty array for these Aura surfaces unless you are intentionally supplying data-model contents.
 - `beginRendering.root` must match the root component id.
-
-## Fallback-Only Shape
-
-Aura Pulse currently tolerates this ad hoc shape for resilience, but treat it as a fallback path rather than the preferred contract:
-
-```json
-[
-  {
-    "type": "message",
-    "value": "Visible button check",
-    "actionLabel": "Visible Ack"
-  }
-]
-```
-
-Preferred: send valid A2UI instead.
 
 ## Canonical Complex Planning Example
 
@@ -401,6 +387,26 @@ When clicked, Aura Pulse sends a surface action event back to the kernel with:
 - `actionName`
 - `sourceComponentId`
 - `context`
+
+### DraftEditor
+
+Use for owner-editable draft text such as counteroffers, buyer notifications, or listing revisions.
+
+```json
+{
+  "DraftEditor": {
+    "defaultValue": "Hello buyer, thanks for the offer.",
+    "submitLabel": "Send revised draft",
+    "actionId": "send-revised",
+    "actionContext": {
+      "listingId": "L-104",
+      "platform": "Etsy"
+    }
+  }
+}
+```
+
+When submitted, Aura Pulse sends the same small primitive `actionContext` values back plus the edited draft text in `context.draftText`.
 
 ## Authoring Notes
 
